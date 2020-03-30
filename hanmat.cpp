@@ -51,6 +51,8 @@
 #include <random>
 #include <time.h>
 #include <strings.h>
+#include <thread>
+#include <mutex>
 #include <sys/resource.h>
 #include <NTL/vector.h>
 #include <NTL/matrix.h>
@@ -60,10 +62,12 @@
 
 /**** ***** ***** ***** *****/
 
-const int n=512;//length data vector
+const int n=60;//length data vector
 const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
 const double ratio_size=1.0/16.0;
 const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
+const int max_number_of_thread = 10; // Maximum number of thread that can be created for each j-th row
+std::mutex solvability_conds_mutex;
 
 /*
   Possible locations of the hidden linear subsequence.
@@ -112,10 +116,54 @@ int *ct_size_explicit;
 /**** ***** ***** ***** *****/
 
 //NTL::Mat<NTL::GF2> *AspC = new NTL::Mat<NTL::GF2> [max_dim+1];
-NTL::Mat<NTL::GF2> *AspTL = new NTL::Mat<NTL::GF2> [max_dim+1];
+//std::unique_ptr<NTL::Mat<NTL::GF2>[]> AspTL(new NTL::Mat<NTL::GF2>[max_dim+1]);
+NTL::Mat<NTL::GF2> AspTL[max_dim+1];
 //NTL::Mat<NTL::GF2> *AspTR = new NTL::Mat<NTL::GF2> [max_dim+1];
 //NTL::Mat<NTL::GF2> *AspBL = new NTL::Mat<NTL::GF2> [max_dim+1];
 //No need of the list of Bottom Right matrices, i.e. AspBR, since it contains the unknown d_{i,j}.
+
+/**** ***** ***** ***** *****/
+
+/*
+  DESCRIPTION
+  partition_thread_load for a given j-th row, determines each thread load (start index and range)
+  Returned value is a list of pair, pair.first corresponds to start index and pair.second the range.
+  The size of the list might be smaller than the max_number_of_thread value in cases when the number of
+  determinant to compute is too small.
+  Returns an empty list if the computation of the j-th row should be handle by one (current) thread
+*/
+std::vector<std::pair<int,int>> partition_thread_load(int j)
+{
+  std::vector<std::pair<int, int>> result;
+  int start_index = j-1;
+  int end_index = n-j+1;
+  int nb_determinant = end_index - start_index;
+
+  // Uniform share strategy
+  int remaining_determinant = nb_determinant;
+  int determinant_per_thread = nb_determinant / max_number_of_thread;
+  int start = start_index;
+
+  if (determinant_per_thread == 0)
+    return result;
+
+  while (remaining_determinant > 0) {
+
+    if ((remaining_determinant - determinant_per_thread) > 0) {
+      result.push_back(std::pair<int, int>(start, determinant_per_thread));
+      remaining_determinant -= (determinant_per_thread+1);
+      start += determinant_per_thread + 1;
+    }
+    else {
+      result.push_back(std::pair<int, int>(start, remaining_determinant));
+      remaining_determinant = 0;
+    }
+  }
+
+  return result;
+}
+
+/**** ***** ***** ***** *****/
 
 /**** ***** ***** ***** *****/
 
@@ -366,6 +414,7 @@ NTL::GF2 solve_eq_for_lower_corner(int j, int i, int q)
 
 bool chk_conds_for_solvability(int j, int i, int *effective_length)
 {
+  std::lock_guard<std::mutex> lg(solvability_conds_mutex);
   bool ret=false;
   
   for(int w1=2;w1<=max_len_side_grid;w1++)//w1 is the length of the side which is growing so that the main matrix has size (w1+1)x(w1+1)
@@ -410,30 +459,30 @@ bool chk_conds_for_solvability(int j, int i, int *effective_length)
 
 /**** ***** ***** ***** *****/
 
-void d_c_s(int j)
+void d_c_s(int j, int start, int range)
 {
-  int i = j-1;
+  int i = start;
 
-  while(i<n-j+1)
+  while(i<=(start+range))
     {
       int effective_len;
       if(!flags_M[j][i])
 	{
 	  /************/
-	  
+
 	  if( (j>=2) && (new_M[j-2][i]==(NTL::GF2)1) )//North-South-East-West
 	    {
 	      
 	      new_M[j][i]=new_M[j-1][i-1]*new_M[j-1][i+1]+new_M[j-1][i];
 	      flags_M[j][i]=true;
-	      ct_nsew+=1;
+	      // ct_nsew+=1; // Not thread safe
 	      
 	    }
 	  else if ( (j>=2*max_len_side_grid) && chk_conds_for_solvability(j,i,&effective_len) )
 	    {
 	      new_M[j][i] = solve_eq_for_lower_corner(j,i,effective_len);
 	      flags_M[j][i] = true;
-	      ct_grid[effective_len]+=1;
+	      // ct_grid[effective_len]+=1; // Not thread safe
 	    }
 	  else
 	    {
@@ -464,10 +513,10 @@ void d_c_s(int j)
 			  tmp[c][r] = new_M[t_x][i-r+c];//==V0[i-j+r+c+1];
 			}
 		    }
-		  ct_det_tab[0]+=1;
+		  // ct_det_tab[0]+=1; // Not thread safe
 		  new_M[j][i] = NTL::determinant(tmp);
 		  flags_M[j][i]=true;
-		  ct_size_explicit[j]+=1;
+		  // ct_size_explicit[j]+=1; // Not thread safe
 		}
 	      else//computation by cross identities
 		{
@@ -483,7 +532,7 @@ void d_c_s(int j)
 		    }
 		  new_M[j][i] = NTL::determinant(tmp);
 		  flags_M[j][i]=true;
-		  ct_det_tab[t_x-1]+=1;//we use info at level t_x-1 above j, new_M[j-t_x][i]!=0 AND new_M[j-1, j-2, ..., j-(t_x-1)][i]==0, we therefore increase counter indexed by t_x-1
+		  // ct_det_tab[t_x-1]+=1;//we use info at level t_x-1 above j, new_M[j-t_x][i]!=0 AND new_M[j-1, j-2, ..., j-(t_x-1)][i]==0, we therefore increase counter indexed by t_x-1 // Not thread safe
 		}
 	    }
 	}
@@ -660,7 +709,25 @@ int main(void)
   for(int j = 2; j<max_dim+1; j++)//levels < j are completed
     {
       s_f(j);//make squares using full knowledge for previous rows 0, 1,...,j-1 inclusively
-      d_c_s(j);//fill j-th row for determinants not found yet
+      // d_c_s(j, start, range);//fill j-th row for determinants not found yet
+
+      std::vector<std::pair<int, int>> thread_load = partition_thread_load(j);
+      
+      if (thread_load.empty()) {
+        // Compute j-th row with current thread
+        d_c_s(j, j-1, n-2*j+2);
+        continue;
+      }
+
+      // Compute j-th row with multiple thread
+      std::thread *thread_pool = new std::thread[thread_load.size()];
+      for(size_t k = 0; k<thread_load.size(); k++) {
+        thread_pool[k] = std::thread(&d_c_s, j, thread_load[k].first, thread_load[k].second);
+      }
+
+      for(size_t k = 0; k<thread_load.size(); k++)
+        thread_pool[k].join();
+      delete[] thread_pool;
     }
   
   double tnew1 = get_ms_res_time();
