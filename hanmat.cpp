@@ -62,12 +62,13 @@
 
 /**** ***** ***** ***** *****/
 
-const int n=60;//length data vector
+const int n=256;//length data vector
 const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
 const double ratio_size=1.0/16.0;
 const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
 const int max_number_of_thread = 10; // Maximum number of thread that can be created for each j-th row
 std::mutex solvability_conds_mutex;
+std::mutex test_mutex;
 
 /*
   Possible locations of the hidden linear subsequence.
@@ -93,14 +94,15 @@ const bool RUN_NAIVE_FLAG = true;
 const bool PRINT_COUNTS_FOR_DIRECT_COMPUTATION = false;
 // PRINT_COUNTS_FOR_DIRECT_COMPUTATION = true prints counts of the determinants that we were not able to catch with our theory and that required explicit computations.
 
-const bool PRINT_TRIA_TABLE=true;
+const bool PRINT_TRIA_TABLE=false;
 // To print triangular table(s) out.
 
 /**** ***** ***** ***** *****/
 
 NTL::Vec<NTL::GF2> C_gen;//generation vector
 NTL::Vec<NTL::GF2> V0;//data vector to be filled with a linear subsequence
-NTL::Mat<NTL::GF2> M;
+NTL::Mat<NTL::GF2> M_nothread;
+NTL::Mat<NTL::GF2> M_thread;
 NTL::Mat<bool> flags_M;
 NTL::Mat<NTL::GF2> new_M;
 
@@ -123,6 +125,32 @@ NTL::Mat<NTL::GF2> AspTL[max_dim+1];
 //No need of the list of Bottom Right matrices, i.e. AspBR, since it contains the unknown d_{i,j}.
 
 /**** ***** ***** ***** *****/
+
+void computeTrival(int j, int start, int range)
+{
+  NTL::Mat<NTL::GF2> tmp;
+  tmp.SetDims(j,j);
+  
+  for(int r1=0;r1<j;r1++)
+    {
+	for(int c1=0;c1<j;c1++)
+	{
+	  tmp[r1][c1]=0;
+	}
+    }
+  
+  for(int i = start; i<=start+range; i++)
+    {
+	for( int r = 0; r<j ; r++)
+	{
+	  for( int c = 0; c<j ; c++)
+	    {
+		tmp[r][c] = V0[(i+1-j+r+c)];
+	    }
+	}
+	M_thread[j][i] = NTL::determinant(tmp);
+    }
+}
 
 /*
   DESCRIPTION
@@ -241,7 +269,10 @@ bool chk_triangular_tables_not_the_same(NTL::Mat<NTL::GF2> M1, NTL::Mat<NTL::GF2
       for(int c0=r0-1;c0 <= n-r0;c0++)
 	{
 	  chk = (M1[r0][c0]!=M2[r0][c0]);
-	  if(chk){return chk;}
+	  if(chk){
+		  std::cout << "mismatch at line " << r0;
+		  return chk;
+	  }
 	}
       
     }
@@ -469,20 +500,25 @@ void d_c_s(int j, int start, int range)
       if(!flags_M[j][i])
 	{
 	  /************/
+		bool solvability = false;
+		if (j>=2*max_len_side_grid)
+		{
+			solvability = chk_conds_for_solvability(j,i,&effective_len);
+		}
 
 	  if( (j>=2) && (new_M[j-2][i]==(NTL::GF2)1) )//North-South-East-West
 	    {
-	      
 	      new_M[j][i]=new_M[j-1][i-1]*new_M[j-1][i+1]+new_M[j-1][i];
 	      flags_M[j][i]=true;
 	      // ct_nsew+=1; // Not thread safe
-	      
 	    }
-	  else if ( (j>=2*max_len_side_grid) && chk_conds_for_solvability(j,i,&effective_len) )
+	  else if ( solvability )
 	    {
+				test_mutex.lock();
 	      new_M[j][i] = solve_eq_for_lower_corner(j,i,effective_len);
 	      flags_M[j][i] = true;
 	      // ct_grid[effective_len]+=1; // Not thread safe
+				test_mutex.unlock();
 	    }
 	  else
 	    {
@@ -599,30 +635,35 @@ int main(void)
   
   /**************************************************************/
  
-  M.SetDims(max_dim+1,n);//number of rows = max_dim + 1 (an extra one required for initializing the top part)
+  M_thread.SetDims(max_dim+1,n);//number of rows = max_dim + 1 (an extra one required for initializing the top part)
+  M_nothread.SetDims(max_dim+1,n);//number of rows = max_dim + 1 (an extra one required for initializing the top part)
 
   for(int r1=0;r1<max_dim+1;r1++)
     {
       for(int c1=0;c1<n;c1++)
 	{
-	  M[r1][c1]=(NTL::GF2)0;
+	  M_thread[r1][c1]=(NTL::GF2)0;
+	  M_nothread[r1][c1]=(NTL::GF2)0;
 	}
     }
 
   double tnaive0 = get_ms_res_time();
   for(int c1=0;c1<n;c1++)
     {
-      M[0][c1]=(NTL::GF2)1;
+      M_thread[0][c1]=(NTL::GF2)1;
+	M_nothread[0][c1]=(NTL::GF2)1;
     }
   for(int c1=0;c1<n;c1++)
     {
-      M[1][c1]=V0[c1];
+      M_thread[1][c1]=V0[c1];
+	M_nothread[1][c1]=V0[c1];
     }
   
   ct_naive=0;
  
   if(RUN_NAIVE_FLAG)
     {
+	// One threaded approach
       for(int j = 2; j<max_dim+1; j++)
 	{
 	  NTL::Mat<NTL::GF2> tmp;
@@ -646,10 +687,40 @@ int main(void)
 		    }
 		}
 	      ct_naive+=1;
-	      M[j][i] = NTL::determinant(tmp);
+	      M_nothread[j][i] = NTL::determinant(tmp);
 	    }
 	}
+
+	// Multi thread approach
+	for(int j = 2; j<max_dim+1; j++)//levels < j are completed
+	    {
+		std::vector<std::pair<int, int>> thread_load = partition_thread_load(j);
+		
+		if (thread_load.empty()) {
+		  // Compute j-th row with current thread
+		  computeTrival(j, j-1, n-2*j+2);
+		  continue;
+		}
+
+		// Compute j-th row with multiple thread
+		std::thread *thread_pool = new std::thread[thread_load.size()];
+		for(size_t k = 0; k<thread_load.size(); k++) {
+		  thread_pool[k] = std::thread(&computeTrival, j, thread_load[k].first, thread_load[k].second);
+		}
+
+		for(size_t k = 0; k<thread_load.size(); k++)
+		  thread_pool[k].join();
+		delete[] thread_pool;
+	    }
     }
+    if(chk_triangular_tables_not_the_same(M_nothread,M_thread,max_dim,n))
+    {
+      std::cout<<"\n\n*****There are mismatches between naive and new dynamic methods. Exit now.*****\n";
+      exit(-1);
+    }
+    else
+	exit(0);
+
   
   double tnaive1 = get_ms_res_time();
   double time_diff_naive = tnaive1-tnaive0;
@@ -733,7 +804,7 @@ int main(void)
   double tnew1 = get_ms_res_time();
   double time_diff_new = tnew1-tnew0;
     
-  if(chk_triangular_tables_not_the_same(M,new_M,max_dim,n))
+  if(chk_triangular_tables_not_the_same(M_nothread,new_M,max_dim,n))
     {
       std::cout<<"\n\n*****There are mismatches between naive and new dynamic methods. Exit now.*****\n";
       exit(-1);
