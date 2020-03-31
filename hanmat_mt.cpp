@@ -69,8 +69,8 @@ const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
 const double ratio_size=1.0/16.0;
 const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
 const int max_number_of_thread = 8; // Maximum number of thread that can be created for each j-th row
-std::mutex solvability_conds_mutex;
-std::mutex assignment_mutex;
+//std::mutex solvability_conds_mutex;
+//std::mutex assignment_mutex;
 
 /*
   Possible locations of the hidden linear subsequence.
@@ -127,6 +127,8 @@ struct experiment {
 
 
 double time_triv_st,time_triv_mt,time_fast_st,time_fast_mt;// for timing
+
+/*
 double get_ms_res_time(void)//This is the most accurate measure of time I could think. Anything better?
 {
   
@@ -138,7 +140,7 @@ double get_ms_res_time(void)//This is the most accurate measure of time I could 
   
   return current_time;
 }
-
+*/
 
 /* PRINT FUNCTIONS */
 
@@ -155,10 +157,10 @@ void print_stats()
   std::cout << "\n[A." << std::setw(out_width0) <<4<< "]  number of entries of a table          = " << number_of_entries << " (analytic count)\n";
 
   
-  std::cout << "\n[B." << std::setw(out_width0) <<0<< "]  CPU time trivial algo single thread   = " << time_triv_st << " ms";
-  std::cout << "\n[B." << std::setw(out_width0) <<1<< "]  CPU time trivial algo multi thread    = " << time_triv_mt << " ms";
-  std::cout << "\n[B." << std::setw(out_width0) <<2<< "]  CPU time faster algo single thread    = " << time_fast_st << " ms";
-  std::cout << "\n[B." << std::setw(out_width0) <<3<< "]  CPU time faster algo multi thread     = " << time_fast_mt << " ms \n\n";
+  std::cout << "\n[B." << std::setw(out_width0) <<0<< "]  Wall time trivial algo single thread   = " << time_triv_st << " ms";
+  std::cout << "\n[B." << std::setw(out_width0) <<1<< "]  Wall time trivial algo multi thread    = " << time_triv_mt << " ms";
+  std::cout << "\n[B." << std::setw(out_width0) <<2<< "]  Wall time faster algo single thread    = " << time_fast_st << " ms";
+  std::cout << "\n[B." << std::setw(out_width0) <<3<< "]  Wall time faster algo multi thread     = " << time_fast_mt << " ms \n\n";
   
 }
 
@@ -338,7 +340,7 @@ std::vector<std::pair<int,int>> partition_thread_load(int j)
 
   return result;
 }
-
+/*
 void assign_GF2(NTL::Mat<NTL::GF2> const & mat, NTL::GF2 val, int j, int i)
 {
   if (MULTI_THREAD_ON)
@@ -347,6 +349,7 @@ void assign_GF2(NTL::Mat<NTL::GF2> const & mat, NTL::GF2 val, int j, int i)
   NTL::Mat<NTL::GF2> & m = const_cast<NTL::Mat<NTL::GF2>&>(mat);
   m[j][i] = val;
 }
+*/
 
 /*
   DESCRIPTION:
@@ -432,8 +435,9 @@ void s_f(struct experiment const & exp, int j)
 
           for(int x_i=x_i_l;x_i<=x_i_r;x_i++)
           {
-            assign_GF2(experiment.new_M, NTL::GF2(0), x_j, x_i);
-            experiment.flags_M[x_j][x_i]=1;
+            //assign_GF2(experiment.new_M, NTL::GF2(0), x_j, x_i);
+	    experiment.new_M[x_j][x_i]=NTL::GF2(0);
+	    experiment.flags_M[x_j][x_i]=1;
           }
         }
         i = rp;
@@ -496,11 +500,11 @@ bool chk_conds_for_solvability(struct experiment const & exp, int j, int i, int 
 	  for(int cx=0;cx<w1;cx++)
 	    {
 	      //The size for any of the Top/Bottom & Left/Right matrices is w1 x w1 since the main matrix has size (w1+1)x(w1+1)
-	      if (MULTI_THREAD_ON)
-		solvability_conds_mutex.lock();
+	      //if (MULTI_THREAD_ON)
+	      //solvability_conds_mutex.lock();
 	      AspTL[w1][rx][cx] = experiment.new_M[j-2*w1+rx+cx][i-rx+cx];
-	      if (MULTI_THREAD_ON)
-		solvability_conds_mutex.unlock();
+	      //if (MULTI_THREAD_ON)
+	      //solvability_conds_mutex.unlock();
 	      //AspTR[w1][rx][cx]=experiment.new_M[j-2*w1+(rx+1)+cx][i-rx+(cx+1)];
 	      //AspBL[w1][rx][cx]=experiment.new_M[j-2*w1+(rx+1)+cx][i-rx+(cx-1)];
 	    }
@@ -535,92 +539,100 @@ void d_c_s(struct experiment const & exp, int j, int start, int range)
 {
   struct experiment & experiment = const_cast<struct experiment&>(exp);
   int i = start;
-
+  
   while(i<=(start+range))
-  {
-    int effective_len;
-
-    if(!experiment.flags_M[j][i])
     {
+      int effective_len;
+      
+      if(!experiment.flags_M[j][i])
+	{
   	  /************/
-
-      if( (j>=2) && (experiment.new_M[j-2][i]==(NTL::GF2)1) )//North-South-East-West
-      {
-	      assign_GF2(experiment.new_M, experiment.new_M[j-1][i-1]*experiment.new_M[j-1][i+1]+experiment.new_M[j-1][i], j, i);
+	  
+	  if( (j>=2) && (experiment.new_M[j-2][i]==(NTL::GF2)1) )//North-South-East-West
+	    {
+	      
+	      //assign_GF2(experiment.new_M, experiment.new_M[j-1][i-1]*experiment.new_M[j-1][i+1]+experiment.new_M[j-1][i], j, i);
+	      experiment.new_M[j][i] = experiment.new_M[j-1][i-1]*experiment.new_M[j-1][i+1]+experiment.new_M[j-1][i];
 	      experiment.flags_M[j][i]=true;
 	    }
-      else if ( (j>=2*max_len_side_grid) && chk_conds_for_solvability(experiment, j, i, &effective_len) )
+	  else if ( (j>=2*max_len_side_grid) && chk_conds_for_solvability(experiment, j, i, &effective_len) )
 	    {
-	      assign_GF2(experiment.new_M, solve_eq_for_lower_corner(experiment, j, i, effective_len), j, i);
+	      //assign_GF2(experiment.new_M, solve_eq_for_lower_corner(experiment, j, i, effective_len), j, i);
+	      experiment.new_M[j][i] = solve_eq_for_lower_corner(experiment, j, i, effective_len);
 	      experiment.flags_M[j][i] = true;
 	    }
-      else
+	  else
 	    {
 	      int t_x=1;
 	      
 	      while(t_x<=j)
-        {
-		      if(experiment.new_M[j-t_x][i]==0)//start check from j-1 to 0 (experiment.new_M[0][i] == 1 by definition) ( level of sequence )
-            t_x+=1;
-          else
-            break;//when here, experiment.new_M[j-t_x][i]!=0 AND experiment.new_M[j-1, j-2, ..., j-(t_x-1)][i]==0
-        }
+		{
+		  if(experiment.new_M[j-t_x][i]==0)//start check from j-1 to 0 (experiment.new_M[0][i] == 1 by definition) ( level of sequence )
+		    t_x+=1;
+		  else
+		    break;//when here, experiment.new_M[j-t_x][i]!=0 AND experiment.new_M[j-1, j-2, ..., j-(t_x-1)][i]==0
+		}
 	      //Note that t_x can never be 2 actually for it is handled by the North-South-East-West 
 	      if(t_x==1)//explicit computation
-        {
-          NTL::Mat<NTL::GF2> tmp;
-          tmp.SetDims(j,j);
+		{
+		  NTL::Mat<NTL::GF2> tmp;
+		  tmp.SetDims(j,j);
 		  
-		      for(int r = 0;r<j ; r++)
-          {
+		  for(int r = 0;r<j ; r++)
+		    {
 		        for(int c = 0; c<j ; c++)
-              tmp[c][r] = experiment.new_M[t_x][i-r+c];//==V0[i-j+r+c+1];
-          }
-		      
-          assign_GF2(experiment.new_M, NTL::determinant(tmp), j, i);
-		      experiment.flags_M[j][i]=true;
-        }
-	      else//computation by cross identities
-        {
-          NTL::Mat<NTL::GF2> tmp;
-          tmp.SetDims(t_x,t_x);
+			  tmp[c][r] = experiment.new_M[t_x][i-r+c];//==V0[i-j+r+c+1];
+		    }
 		  
-		      for(int r=0;r<t_x;r++)
-          {
-		        for(int c=0;c<t_x;c++)
-			        tmp[r][c]=experiment.new_M[j-(t_x-1)][i+c-r];
-          }
-
-          assign_GF2(experiment.new_M, NTL::determinant(tmp), j, i);
-		      experiment.flags_M[j][i]=true;
-        }
+		  //assign_GF2(experiment.new_M, NTL::determinant(tmp), j, i);
+		  experiment.new_M[j][i] = NTL::determinant(tmp);
+		  experiment.flags_M[j][i]=true;
+		}
+	      else//computation by cross identities
+		{
+		  NTL::Mat<NTL::GF2> tmp;
+		  tmp.SetDims(t_x,t_x);
+		  
+		  for(int r=0;r<t_x;r++)
+		    {
+		      for(int c=0;c<t_x;c++)
+			tmp[r][c]=experiment.new_M[j-(t_x-1)][i+c-r];
+		    }
+		  
+		  //assign_GF2(experiment.new_M, NTL::determinant(tmp), j, i);
+		  experiment.new_M[j][i] = NTL::determinant(tmp);
+		  experiment.flags_M[j][i]=true;
+		}
 	    }
+	}
+      i=i+1;
     }
-    i=i+1;
-  }
 }
 
-void solve_j_trivial(struct experiment const &experiment, int j, int start, int range)
+void solve_j_trivial(struct experiment const & exp, int j, int start, int range)
 {
+  struct experiment & experiment = const_cast<struct experiment&>(exp);
+  
   NTL::Mat<NTL::GF2> tmp;
   tmp.SetDims(j,j);
   
   for(int r1=0;r1<j;r1++)
-  {
-    for(int c1=0;c1<j;c1++)
-	    tmp[r1][c1]=0;
-  }
+    {
+      for(int c1=0;c1<j;c1++)
+	tmp[r1][c1]=0;
+    }
   
   for(int i = start; i<=start+range; i++)
-  {
-	  for( int r = 0; r<j ; r++)
     {
-      for( int c = 0; c<j ; c++)
-        tmp[r][c] = V0[(i+1-j+r+c)];
+      for( int r = 0; r<j ; r++)
+	{
+	  for( int c = 0; c<j ; c++)
+	    tmp[r][c] = V0[(i+1-j+r+c)];
+	}
+      //NTL::GF2 determinant = NTL::determinant(tmp);
+      //assign_GF2(experiment.new_M, determinant, j, i);
+      experiment.new_M[j][i] = NTL::determinant(tmp);
     }
-    NTL::GF2 determinant = NTL::determinant(tmp);
-    assign_GF2(experiment.new_M, determinant, j, i);
-  }
 }
 
 void solve_trivial(struct experiment experiment)
@@ -723,34 +735,34 @@ int main(void)
 
   // Run experiments
   MULTI_THREAD_ON = false;
-  double t0,t1;
+  //double t0,t1;
   //std::clock_t c_start_triv_st = std::clock();
-  //auto t_start = std::chrono::high_resolution_clock::now();
-  t0 = get_ms_res_time();
+  auto t_start = std::chrono::high_resolution_clock::now();
+  //t0 = get_ms_res_time();
   solve_trivial(trivial_experiment);
-  t1 = get_ms_res_time();
-  //auto t_end = std::chrono::high_resolution_clock::now();
+  //t1 = get_ms_res_time();
+  auto t_end = std::chrono::high_resolution_clock::now();
   //std::clock_t c_end_triv_st = std::clock();
   //time_triv_st = 1000.0 * (c_end_triv_st-c_start_triv_st) / CLOCKS_PER_SEC ;
-  time_triv_st =  t1-t0;//std::chrono::duration<double, std::milli>(t_end-t_start).count();
+  time_triv_st =  std::chrono::duration<double, std::milli>(t_end-t_start).count();
   
   //std::clock_t c_start_fast_st = std::clock();
-  //t_start = std::chrono::high_resolution_clock::now();
-  t0 = get_ms_res_time();
+  t_start = std::chrono::high_resolution_clock::now();
+  //t0 = get_ms_res_time();
   solve_fast(fast_experiment);
-  t1 = get_ms_res_time();
-  //t_end = std::chrono::high_resolution_clock::now();
+  //t1 = get_ms_res_time();
+  t_end = std::chrono::high_resolution_clock::now();
   //std::clock_t c_end_fast_st = std::clock();
   //time_fast_st = 1000.0 * (c_end_fast_st-c_start_fast_st) / CLOCKS_PER_SEC ;
-  time_fast_st =  t1 - t0;//std::chrono::duration<double, std::milli>(t_end-t_start).count();
+  time_fast_st = std::chrono::duration<double, std::milli>(t_end-t_start).count();
   
   
   MULTI_THREAD_ON = true;
  
   //std::clock_t c_start_triv_mt = std::clock();
-  auto t_start = std::chrono::high_resolution_clock::now();
+  t_start = std::chrono::high_resolution_clock::now();
   solve_trivial(trivial_experiment_mt);
-  auto t_end = std::chrono::high_resolution_clock::now();
+  t_end = std::chrono::high_resolution_clock::now();
   //std::clock_t c_end_triv_mt = std::clock();
   //time_triv_mt = 1000.0 * (c_end_triv_mt-c_start_triv_mt) / CLOCKS_PER_SEC ;
   time_triv_mt =  std::chrono::duration<double, std::milli>(t_end-t_start).count();
