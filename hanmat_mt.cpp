@@ -25,9 +25,9 @@
 
 /*
   
-  AUTHOR: Claude Gravel
+  AUTHORS: Claude Gravel and Bastien Rigault
   
-  VERSION: 1 (March 2020)
+  VERSION: 2 (April 2020)
   
   TECHNICAL REFERENCE: (arxiv) "Finding linearly generated subsequences" by Claude Gravel and Daniel Panario
 
@@ -49,11 +49,13 @@
 #include <iostream>
 #include <fstream>
 #include <random>
-#include <time.h>
-#include <strings.h>
+#include <ctime>
+#include <chrono>
+#include <sys/resource.h>
+//#include <strings.h>
 #include <thread>
 #include <mutex>
-#include <sys/resource.h>
+
 #include <NTL/vector.h>
 #include <NTL/matrix.h>
 #include <NTL/GF2.h>
@@ -66,7 +68,7 @@ const int n=512;//length data vector
 const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
 const double ratio_size=1.0/16.0;
 const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
-const int max_number_of_thread = 10; // Maximum number of thread that can be created for each j-th row
+const int max_number_of_thread = 8; // Maximum number of thread that can be created for each j-th row
 std::mutex solvability_conds_mutex;
 std::mutex assignment_mutex;
 
@@ -107,13 +109,14 @@ NTL::Vec<NTL::GF2> V0;//data vector to be filled with a linear subsequence
 
 /**** ***** ***** ***** *****/
 
+/*
 int ct_naive;
 int ct_sqfill;
 int ct_nsew;
 int *ct_det_tab;
 int *ct_grid;
 int *ct_size_explicit;
-
+*/
 /**** ***** ***** ***** *****/
 
 struct experiment {
@@ -122,24 +125,41 @@ struct experiment {
   NTL::Mat<NTL::GF2> AspTL[max_dim+1]; // Not used by trivial approach
 };
 
+
+double time_triv_st,time_triv_mt,time_fast_st,time_fast_mt;// for timing
+double get_ms_res_time(void)//This is the most accurate measure of time I could think. Anything better?
+{
+  
+  double current_time;
+  
+  struct rusage ruse;
+  getrusage(RUSAGE_THREAD, &ruse);
+  current_time = ((double) ruse.ru_utime.tv_sec * 1000.0) + (((double) ruse.ru_utime.tv_usec) / 1000.0); //resultat en millisecondes
+  
+  return current_time;
+}
+
+
 /* PRINT FUNCTIONS */
+
 void print_stats()
 {
   int number_of_entries = ((n%2)==0)*((n/2)-1)*(n/2)+((n%2)==1)*(n/2)*(n-1)/2;
   int out_width0 = (int)floor(1.0+(log(n)/log(10)));
-  int out_width1 = (int)floor(1.0+(log(number_of_entries)/log(10)));
+  //int out_width1 = (int)floor(1.0+(log(number_of_entries)/log(10)));
   
-  std::cout << "\n[A." << std::setw(out_width0) <<0<< "]  length of a sequence              = " << n;
-  std::cout << "\n[A." << std::setw(out_width0) <<1<< "]  length of generating vector       = " << len_C_gen;
-  std::cout << "\n[A." << std::setw(out_width0) <<2<< "]  left index linear subsequence     = " << left_index;
-  std::cout << "\n[A." << std::setw(out_width0) <<3<< "]  right index linear subsequene     = " << right_index;
-  std::cout << "\n[A." << std::setw(out_width0) <<4<< "]  number of entries of a table      = " << number_of_entries << " (analytic count)\n";
+  std::cout << "\n[A." << std::setw(out_width0) <<0<< "]  length of a sequence                  = " << n;
+  std::cout << "\n[A." << std::setw(out_width0) <<1<< "]  length of generating vector           = " << len_C_gen;
+  std::cout << "\n[A." << std::setw(out_width0) <<2<< "]  left index linear subsequence         = " << left_index;
+  std::cout << "\n[A." << std::setw(out_width0) <<3<< "]  right index linear subsequene         = " << right_index;
+  std::cout << "\n[A." << std::setw(out_width0) <<4<< "]  number of entries of a table          = " << number_of_entries << " (analytic count)\n";
 
-  /*
-  std::cout << "\n[B." << std::setw(out_width0) <<0<< "]  time new                          = " << time_diff_new << " ms";
-  std::cout << "\n[B." << std::setw(out_width0) <<1<< "]  time naive                        = " << time_diff_naive << " ms";
-  std::cout << "\n[B." << std::setw(out_width0) <<2<< "]  ratio B.0/B.1                     = " << time_diff_new/time_diff_naive << "\n";
-  */
+  
+  std::cout << "\n[B." << std::setw(out_width0) <<0<< "]  CPU time trivial algo single thread   = " << time_triv_st << " ms";
+  std::cout << "\n[B." << std::setw(out_width0) <<1<< "]  CPU time trivial algo multi thread    = " << time_triv_mt/(double)max_number_of_thread << " ms";
+  std::cout << "\n[B." << std::setw(out_width0) <<2<< "]  CPU time faster algo single thread    = " << time_fast_st << " ms";
+  std::cout << "\n[B." << std::setw(out_width0) <<3<< "]  CPU time faster algo multi thread     = " << time_fast_mt/(double)max_number_of_thread << " ms \n\n";
+  
 }
 
 /*
@@ -464,22 +484,24 @@ NTL::GF2 solve_eq_for_lower_corner(struct experiment *experiment, int j, int i, 
 
 bool chk_conds_for_solvability(struct experiment *experiment, int j, int i, int *effective_length)
 {
-  if (MULTI_THREAD_ON)
-    std::lock_guard<std::mutex> lg(solvability_conds_mutex);
+  
 
   NTL::Mat<NTL::GF2> new_M = experiment->new_M;
   NTL::Mat<NTL::GF2> *AspTL = experiment->AspTL;
   bool ret=false;
   
   for(int w1=2;w1<=max_len_side_grid;w1++)//w1 is the length of the side which is growing so that the main matrix has size (w1+1)x(w1+1)
-  {
-    for(int rx=0;rx<w1;rx++)
     {
-	    for(int cx=0;cx<w1;cx++)
-      {
+      for(int rx=0;rx<w1;rx++)
+	{
+	  for(int cx=0;cx<w1;cx++)
+	    {
 	      //The size for any of the Top/Bottom & Left/Right matrices is w1 x w1 since the main matrix has size (w1+1)x(w1+1)
-
+	      if (MULTI_THREAD_ON)
+		solvability_conds_mutex.lock();
 	      AspTL[w1][rx][cx] = new_M[j-2*w1+rx+cx][i-rx+cx];
+	      if (MULTI_THREAD_ON)
+		solvability_conds_mutex.unlock();
 	      //AspTR[w1][rx][cx]=new_M[j-2*w1+(rx+1)+cx][i-rx+(cx+1)];
 	      //AspBL[w1][rx][cx]=new_M[j-2*w1+(rx+1)+cx][i-rx+(cx-1)];
 	    }
@@ -703,13 +725,45 @@ int main(void)
 
   // Run experiments
   MULTI_THREAD_ON = false;
+  double t0,t1;
+  //std::clock_t c_start_triv_st = std::clock();
+  //auto t_start = std::chrono::high_resolution_clock::now();
+  t0 = get_ms_res_time();
   solve_trivial(&trivial_experiment);
+  t1 = get_ms_res_time();
+  //auto t_end = std::chrono::high_resolution_clock::now();
+  //std::clock_t c_end_triv_st = std::clock();
+  //time_triv_st = 1000.0 * (c_end_triv_st-c_start_triv_st) / CLOCKS_PER_SEC ;
+  time_triv_st =  t1-t0;//std::chrono::duration<double, std::milli>(t_end-t_start).count();
+  
+  //std::clock_t c_start_fast_st = std::clock();
+  //t_start = std::chrono::high_resolution_clock::now();
+  t0 = get_ms_res_time();
   solve_fast(&fast_experiment);
-
+  t1 = get_ms_res_time();
+  //t_end = std::chrono::high_resolution_clock::now();
+  //std::clock_t c_end_fast_st = std::clock();
+  //time_fast_st = 1000.0 * (c_end_fast_st-c_start_fast_st) / CLOCKS_PER_SEC ;
+  time_fast_st =  t1 - t0;//std::chrono::duration<double, std::milli>(t_end-t_start).count();
+  
   MULTI_THREAD_ON = true;
+ 
+  //std::clock_t c_start_triv_mt = std::clock();
+  auto t_start = std::chrono::high_resolution_clock::now();
   solve_trivial(&trivial_experiment_mt);
+  auto t_end = std::chrono::high_resolution_clock::now();
+  //std::clock_t c_end_triv_mt = std::clock();
+  //time_triv_mt = 1000.0 * (c_end_triv_mt-c_start_triv_mt) / CLOCKS_PER_SEC ;
+  time_triv_mt =  std::chrono::duration<double, std::milli>(t_end-t_start).count();
+   
+  //std::clock_t c_start_fast_mt = std::clock();
+  t_start = std::chrono::high_resolution_clock::now();
   solve_fast(&fast_experiment_mt);
-
+  t_end = std::chrono::high_resolution_clock::now();
+  //std::clock_t c_end_fast_mt = std::clock();
+  //time_fast_mt = 1000.0 * (c_end_fast_mt-c_start_fast_mt) / CLOCKS_PER_SEC ;
+  time_fast_mt =  std::chrono::duration<double, std::milli>(t_end-t_start).count();
+  
   // Check results
   if (chk_triangular_tables_not_the_same(trivial_experiment.new_M, fast_experiment.new_M, max_dim, n))
   {
