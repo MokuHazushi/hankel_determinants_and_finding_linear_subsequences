@@ -647,6 +647,7 @@ void solve_fast(struct experiment *experiment)
     // Single thread solving
     for (int j=2; j<max_dim+1; j++)
       solve_j_fast(experiment, j, j-1, n-2*j+2);
+    return;
   }
 
   // Multi thread solving
