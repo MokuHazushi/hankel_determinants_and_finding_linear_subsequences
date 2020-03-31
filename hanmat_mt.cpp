@@ -464,9 +464,6 @@ NTL::GF2 solve_eq_for_lower_corner(struct experiment *experiment, int j, int i, 
 
 bool chk_conds_for_solvability(struct experiment *experiment, int j, int i, int *effective_length)
 {
-  if (MULTI_THREAD_ON)
-    std::lock_guard<std::mutex> lg(solvability_conds_mutex);
-
   NTL::Mat<NTL::GF2> new_M = experiment->new_M;
   NTL::Mat<NTL::GF2> *AspTL = experiment->AspTL;
   bool ret=false;
@@ -479,7 +476,13 @@ bool chk_conds_for_solvability(struct experiment *experiment, int j, int i, int 
       {
 	      //The size for any of the Top/Bottom & Left/Right matrices is w1 x w1 since the main matrix has size (w1+1)x(w1+1)
 
+	      if (MULTI_THREAD_ON)
+	      	solvability_conds_mutex.lock();
+
 	      AspTL[w1][rx][cx] = new_M[j-2*w1+rx+cx][i-rx+cx];
+
+	      if (MULTI_THREAD_ON)
+ 		solvability_conds_mutex.unlock();
 	      //AspTR[w1][rx][cx]=new_M[j-2*w1+(rx+1)+cx][i-rx+(cx+1)];
 	      //AspBL[w1][rx][cx]=new_M[j-2*w1+(rx+1)+cx][i-rx+(cx-1)];
 	    }
