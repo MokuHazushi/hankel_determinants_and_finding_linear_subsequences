@@ -64,7 +64,7 @@
 
 /**** ***** ***** ***** *****/
 
-const int n=512;//length data vector
+const int n=10;//length data vector
 const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
 const double ratio_size=1.0/16.0;
 const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
@@ -156,9 +156,9 @@ void print_stats()
 
   
   std::cout << "\n[B." << std::setw(out_width0) <<0<< "]  CPU time trivial algo single thread   = " << time_triv_st << " ms";
-  std::cout << "\n[B." << std::setw(out_width0) <<1<< "]  CPU time trivial algo multi thread    = " << time_triv_mt/(double)max_number_of_thread << " ms";
+  std::cout << "\n[B." << std::setw(out_width0) <<1<< "]  CPU time trivial algo multi thread    = " << time_triv_mt << " ms";
   std::cout << "\n[B." << std::setw(out_width0) <<2<< "]  CPU time faster algo single thread    = " << time_fast_st << " ms";
-  std::cout << "\n[B." << std::setw(out_width0) <<3<< "]  CPU time faster algo multi thread     = " << time_fast_mt/(double)max_number_of_thread << " ms \n\n";
+  std::cout << "\n[B." << std::setw(out_width0) <<3<< "]  CPU time faster algo multi thread     = " << time_fast_mt << " ms \n\n";
   
 }
 
@@ -339,12 +339,12 @@ std::vector<std::pair<int,int>> partition_thread_load(int j)
   return result;
 }
 
-void assign_GF2(NTL::Mat<NTL::GF2> mat, NTL::GF2 val, int i, int j)
+void assign_GF2(NTL::Mat<NTL::GF2> mat, NTL::GF2 val, int j, int i)
 {
   if (MULTI_THREAD_ON)
     std::lock_guard<std::mutex> lg(assignment_mutex);
 
-  mat[i][j] = val;
+  mat[j][i] = val;
 }
 
 /*
@@ -377,7 +377,6 @@ void s_f(struct experiment *experiment, int j)
 
   */
   
-  NTL::Mat<NTL::GF2> new_M = experiment->new_M;
   int i = j-1;
  
   while(i<=n-j)//using knowledge of (j-2)th, (j-1)th rows, stop when right position = n-j+1
@@ -385,9 +384,9 @@ void s_f(struct experiment *experiment, int j)
     int lp = 0;//index of the left non-zero element
     int rp = 0;//index of the right non-zero element
    
-    bool chkL1 = (i==j-1) && (new_M[j-2][i-1]!=0) && (new_M[j-1][i-1]==0) && (new_M[j-2][i]!=0) && (new_M[j-1][i]==0);
+    bool chkL1 = (i==j-1) && (experiment->new_M[j-2][i-1]!=0) && (experiment->new_M[j-1][i-1]==0) && (experiment->new_M[j-2][i]!=0) && (experiment->new_M[j-1][i]==0);
 
-    bool chkL2 = (new_M[j-2][i-1]!=0) && (new_M[j-2][i]!=0) && (new_M[j-1][i-1]!=0) && (new_M[j-1][i]==0);
+    bool chkL2 = (experiment->new_M[j-2][i-1]!=0) && (experiment->new_M[j-2][i]!=0) && (experiment->new_M[j-1][i-1]!=0) && (experiment->new_M[j-1][i]==0);
   
     if(chkL1||chkL2)
     {
@@ -396,8 +395,8 @@ void s_f(struct experiment *experiment, int j)
 	  
 	    while(t1 <= n-j)
 	    {
-	      bool chkR1 = (new_M[j-2][t1-1]!=0) && (new_M[j-2][t1]!=0) && (new_M[j-1][t1-1]==0) && (new_M[j-1][t1]!=0);
-	      bool chkR2 = (t1==n-j) && (new_M[j-2][t1]!=0) && (new_M[j-1][t1]==0) && (new_M[j-2][t1+1]!=0) && (new_M[j-1][t1+1]==0);
+	      bool chkR1 = (experiment->new_M[j-2][t1-1]!=0) && (experiment->new_M[j-2][t1]!=0) && (experiment->new_M[j-1][t1-1]==0) && (experiment->new_M[j-1][t1]!=0);
+	      bool chkR2 = (t1==n-j) && (experiment->new_M[j-2][t1]!=0) && (experiment->new_M[j-1][t1]==0) && (experiment->new_M[j-2][t1+1]!=0) && (experiment->new_M[j-1][t1+1]==0);
 	      
 	      if(chkR1||chkR2)
         {
@@ -431,7 +430,7 @@ void s_f(struct experiment *experiment, int j)
 
           for(int x_i=x_i_l;x_i<=x_i_r;x_i++)
           {
-            assign_GF2(experiment->new_M, (NTL::GF2)0, x_j, x_i);
+            assign_GF2(experiment->new_M, NTL::GF2(0), x_j, x_i);
             experiment->flags_M[x_j][x_i]=1;
           }
         }
@@ -455,7 +454,6 @@ NTL::GF2 solve_eq_for_lower_corner(struct experiment *experiment, int j, int i, 
     The Top/Bottom & Left/Right matrices used to solve for d_{i,j} has size q X q.
   */
   
-  NTL::Mat<NTL::GF2> new_M = experiment->new_M;
   NTL::GF2 ret = (NTL::GF2)0;
   
   NTL::Mat<NTL::GF2> T;
@@ -468,25 +466,22 @@ NTL::GF2 solve_eq_for_lower_corner(struct experiment *experiment, int j, int i, 
 	    if(g<h)
       {
 	      for(int k=0;k<q;k++)//index colonne de la mineure
-		      T[h-1][k]=new_M[j-2*q+h+k][i-h+k];
+		      T[h-1][k]=experiment->new_M[j-2*q+h+k][i-h+k];
 	    }
       else if (g>h)
 	    {
 	      for(int k=0;k<q;k++)
-		      T[h][k]=new_M[j-2*q+h+k][i-h+k];
+		      T[h][k]=experiment->new_M[j-2*q+h+k][i-h+k];
 	    }
       //else it is not part of the expansion of the determinant
     }
-    ret = ret+new_M[j-q+g][i+q-g]*NTL::determinant(T);
+    ret = ret+experiment->new_M[j-q+g][i+q-g]*NTL::determinant(T);
   }
   return ret;
 }
 
 bool chk_conds_for_solvability(struct experiment *experiment, int j, int i, int *effective_length)
 {
-  
-
-  NTL::Mat<NTL::GF2> new_M = experiment->new_M;
   NTL::Mat<NTL::GF2> *AspTL = experiment->AspTL;
   bool ret=false;
   
@@ -499,11 +494,11 @@ bool chk_conds_for_solvability(struct experiment *experiment, int j, int i, int 
 	      //The size for any of the Top/Bottom & Left/Right matrices is w1 x w1 since the main matrix has size (w1+1)x(w1+1)
 	      if (MULTI_THREAD_ON)
 		solvability_conds_mutex.lock();
-	      AspTL[w1][rx][cx] = new_M[j-2*w1+rx+cx][i-rx+cx];
+	      AspTL[w1][rx][cx] = experiment->new_M[j-2*w1+rx+cx][i-rx+cx];
 	      if (MULTI_THREAD_ON)
 		solvability_conds_mutex.unlock();
-	      //AspTR[w1][rx][cx]=new_M[j-2*w1+(rx+1)+cx][i-rx+(cx+1)];
-	      //AspBL[w1][rx][cx]=new_M[j-2*w1+(rx+1)+cx][i-rx+(cx-1)];
+	      //AspTR[w1][rx][cx]=experiment->new_M[j-2*w1+(rx+1)+cx][i-rx+(cx+1)];
+	      //AspBL[w1][rx][cx]=experiment->new_M[j-2*w1+(rx+1)+cx][i-rx+(cx-1)];
 	    }
 	  /*
 	  for(int rx=0;rx<w1-1;rx++)
@@ -511,17 +506,17 @@ bool chk_conds_for_solvability(struct experiment *experiment, int j, int i, int 
 	      for(int cx=0;cx<w1-1;cx++)
 		{
 		  // The size of the sub centered matrix is (w1-1) X (w1-1)
-		  AspC[w1-1][rx][cx]=new_M[j-2*(w1-1)+rx+cx][i-rx+cx];
+		  AspC[w1-1][rx][cx]=experiment->new_M[j-2*(w1-1)+rx+cx][i-rx+cx];
 		}
 	    }
 	  */
     }
       //if ( (NTL::determinant(AspC[w1-1])==0) && (NTL::determinant(experiment->AspTL[w1])==0) && ( (NTL::determinant(AspTR[w1])==0) || (NTL::determinant(AspBL[w1])==0) ) )
     
-      //if ( (NTL::determinant(AspC[w1-1])==0) && (NTL::determinant(experiment->AspTL[w1])!=0) && (new_M[j-w1][i-1]*new_M[j-w1][i+1]+new_M[j-w1-1][i]*new_M[j-w1+1][i]==0))//this is right for side length of the grid <=7;
+      //if ( (NTL::determinant(AspC[w1-1])==0) && (NTL::determinant(experiment->AspTL[w1])!=0) && (experiment->new_M[j-w1][i-1]*experiment->new_M[j-w1][i+1]+experiment->new_M[j-w1-1][i]*experiment->new_M[j-w1+1][i]==0))//this is right for side length of the grid <=7;
       
-      //if ( (NTL::determinant(experiment->AspTL[w1])!=0) && (new_M[j-w1][i-1]*new_M[j-w1][i+1]+new_M[j-w1-1][i]*new_M[j-w1+1][i]==0) )/******/
-      if ( (NTL::determinant(AspTL[w1])!=0) && (new_M[j-w1][i]==0) )/******/
+      //if ( (NTL::determinant(experiment->AspTL[w1])!=0) && (experiment->new_M[j-w1][i-1]*experiment->new_M[j-w1][i+1]+experiment->new_M[j-w1-1][i]*experiment->new_M[j-w1+1][i]==0) )/******/
+      if ( (NTL::determinant(AspTL[w1])!=0) && (experiment->new_M[j-w1][i]==0) )/******/
       {
         ret=true;
         *effective_length=w1;//length of a side of the grid so the main square matrix of size (w1+1) X (w1+1)	  
@@ -534,21 +529,19 @@ bool chk_conds_for_solvability(struct experiment *experiment, int j, int i, int 
 
 void d_c_s(struct experiment *experiment, int j, int start, int range)
 {
-  NTL::Mat<NTL::GF2> new_M = experiment->new_M;
-  NTL::Mat<bool> flags_M = experiment->flags_M;
   int i = start;
 
   while(i<=(start+range))
   {
     int effective_len;
 
-    if(!flags_M[j][i])
+    if(!experiment->flags_M[j][i])
     {
   	  /************/
 
-      if( (j>=2) && (new_M[j-2][i]==(NTL::GF2)1) )//North-South-East-West
+      if( (j>=2) && (experiment->new_M[j-2][i]==(NTL::GF2)1) )//North-South-East-West
       {
-	      assign_GF2(experiment->new_M, new_M[j-1][i-1]*new_M[j-1][i+1]+new_M[j-1][i], j, i);
+	      assign_GF2(experiment->new_M, experiment->new_M[j-1][i-1]*experiment->new_M[j-1][i+1]+experiment->new_M[j-1][i], j, i);
 	      experiment->flags_M[j][i]=true;
 	    }
       else if ( (j>=2*max_len_side_grid) && chk_conds_for_solvability(experiment, j, i, &effective_len) )
@@ -562,10 +555,10 @@ void d_c_s(struct experiment *experiment, int j, int start, int range)
 	      
 	      while(t_x<=j)
         {
-		      if(new_M[j-t_x][i]==0)//start check from j-1 to 0 (new_M[0][i] == 1 by definition) ( level of sequence )
+		      if(experiment->new_M[j-t_x][i]==0)//start check from j-1 to 0 (experiment->new_M[0][i] == 1 by definition) ( level of sequence )
             t_x+=1;
           else
-            break;//when here, new_M[j-t_x][i]!=0 AND new_M[j-1, j-2, ..., j-(t_x-1)][i]==0
+            break;//when here, experiment->new_M[j-t_x][i]!=0 AND experiment->new_M[j-1, j-2, ..., j-(t_x-1)][i]==0
         }
 	      //Note that t_x can never be 2 actually for it is handled by the North-South-East-West 
 	      if(t_x==1)//explicit computation
@@ -576,7 +569,7 @@ void d_c_s(struct experiment *experiment, int j, int start, int range)
 		      for(int r = 0;r<j ; r++)
           {
 		        for(int c = 0; c<j ; c++)
-              tmp[c][r] = new_M[t_x][i-r+c];//==V0[i-j+r+c+1];
+              tmp[c][r] = experiment->new_M[t_x][i-r+c];//==V0[i-j+r+c+1];
           }
 		      
           assign_GF2(experiment->new_M, NTL::determinant(tmp), j, i);
@@ -590,7 +583,7 @@ void d_c_s(struct experiment *experiment, int j, int start, int range)
 		      for(int r=0;r<t_x;r++)
           {
 		        for(int c=0;c<t_x;c++)
-			        tmp[r][c]=new_M[j-(t_x-1)][i+c-r];
+			        tmp[r][c]=experiment->new_M[j-(t_x-1)][i+c-r];
           }
 
           assign_GF2(experiment->new_M, NTL::determinant(tmp), j, i);
@@ -679,7 +672,7 @@ void solve_fast(struct experiment *experiment)
 
     if (thread_load.empty())
     {
-      solve_j_trivial(experiment, j, j-1, n-2*j+2);
+      solve_j_fast(experiment, j, j-1, n-2*j+2);
       continue;
     }
 
