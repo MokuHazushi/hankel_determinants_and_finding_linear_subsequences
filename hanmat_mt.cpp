@@ -58,11 +58,11 @@
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-const int n=1024;//length data vector
+const int n=2048;//length data vector
 const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
 const double ratio_size=1.0/16.0;
 const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
-const int max_number_of_thread = 8; // Maximum number of thread that can be created for each j-th row
+const int max_number_of_thread = 12; // Maximum number of thread that can be created for each j-th row
 
 /*
   Possible locations of the hidden linear subsequence.
@@ -93,6 +93,13 @@ const bool PRINT_TRIA_TABLE=false;
 
 bool MULTI_THREAD_ON=false;
 
+enum Thread_Allocation_Strategy {
+	UNIFORM_ALLOCATION,
+	OPTIMIZED_ALLOCATION
+};
+
+Thread_Allocation_Strategy THREAD_ALLOCATION_STRATEGY = UNIFORM_ALLOCATION;
+
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
 NTL::Vec<NTL::GF2> C_gen;//generation vector
@@ -108,7 +115,7 @@ struct experiment {
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-double time_triv_st,time_triv_mt,time_fast_st,time_fast_mt;// for timing
+double time_triv_st,time_triv_mt,time_fast_st,time_fast_mt,time_fast_mt_opt;// for timing
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
@@ -126,11 +133,11 @@ void print_stats()
   std::cout << "\n[A." << std::setw(out_width0) <<4<< "]  number of entries of a table          = " << number_of_entries << " (analytic count)\n";
 
   
-  std::cout << "\n[B." << std::setw(out_width0) <<0<< "]  Wall time trivial algo single thread   = " << time_triv_st << " ms";
-  std::cout << "\n[B." << std::setw(out_width0) <<1<< "]  Wall time trivial algo multi thread    = " << time_triv_mt << " ms";
-  std::cout << "\n[B." << std::setw(out_width0) <<2<< "]  Wall time faster algo single thread    = " << time_fast_st << " ms";
-  std::cout << "\n[B." << std::setw(out_width0) <<3<< "]  Wall time faster algo multi thread     = " << time_fast_mt << " ms \n\n";
-  
+  std::cout << "\n[B." << std::setw(out_width0) <<0<< "]  Wall time trivial algo single thread                       = " << time_triv_st << " ms";
+  std::cout << "\n[B." << std::setw(out_width0) <<1<< "]  Wall time trivial algo multi thread                        = " << time_triv_mt << " ms";
+  std::cout << "\n[B." << std::setw(out_width0) <<2<< "]  Wall time faster algo single thread                        = " << time_fast_st << " ms";
+  std::cout << "\n[B." << std::setw(out_width0) <<3<< "]  Wall time faster algo multi thread uniform allocation      = " << time_fast_mt << " ms";
+  std::cout << "\n[B." << std::setw(out_width0) <<4<< "]  Wall time faster algo multi thread optimized allocation    = " << time_fast_mt_opt << " ms \n\n";
 }
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
@@ -313,6 +320,58 @@ std::vector<std::pair<int,int>> partition_thread_load(int j)
   return result;
 }
 
+/*
+  DESCRIPTION
+  partition_thread_load_optimized for a given j-th row, determines each thread load (start index and range)
+  Returned value is a list of pair, pair.first corresponds to start index and pair.second the range.
+  The size of the list is independant from the max_number_of_thread parameter. The max_number_of_thread parameter
+  only give a maximum boundary for the number of determinant that can be allocated to a thread.
+  Returns an empty list if the computation of the j-th row should be handle by one (current) thread
+*/
+std::vector<std::pair<int,int>> partition_thread_load_optimized(int j, NTL::Mat<bool> &flags_M)
+{
+  std::vector<std::pair<int, int>> result;
+  int start_index = j-1;
+  int end_index = n-j+1;
+  int nb_determinant = end_index - start_index;
+  int determinant_per_thread = nb_determinant / max_number_of_thread;
+  
+  if (determinant_per_thread == 0) // Allocate only one thread (current one)
+    return result;
+  
+  // Optimized allocation, skip flagged determinant
+  int start = start_index;
+  int nb_determinant_allocated = 0;
+  for (int i=start_index; i<=end_index; i++) 
+  {
+    if (flags_M[j][i]) {
+      if (nb_determinant_allocated > 0)
+      {
+	// Allocate a thread
+	result.push_back(std::pair<int, int>(start, nb_determinant_allocated));
+	start = i;
+	nb_determinant_allocated = 0;
+      }
+      continue;
+    }
+
+    nb_determinant_allocated++;
+    if (nb_determinant_allocated >= determinant_per_thread)
+    {
+      // Allocate a thread
+      result.push_back(std::pair<int, int>(start, nb_determinant_allocated));
+      start = i;
+      nb_determinant_allocated = 0;
+    }
+  }
+  if (nb_determinant_allocated != 0)
+  {
+    // Allocate a thread
+    result.push_back(std::pair<int, int>(start, nb_determinant_allocated));
+  }
+    
+  return result;
+}
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
@@ -636,7 +695,16 @@ void solve_fast(struct experiment experiment)
   // Multi thread solving
   for (int j=2; j<max_dim+1; j++)
     {
-      std::vector<std::pair<int, int>> thread_load = partition_thread_load(j);
+      std::vector<std::pair<int, int>> thread_load;
+      switch (THREAD_ALLOCATION_STRATEGY)
+      {
+	case UNIFORM_ALLOCATION:
+	  thread_load = partition_thread_load(j);
+	  break;
+	case OPTIMIZED_ALLOCATION:
+	  thread_load = partition_thread_load_optimized(j, experiment.flags_M);
+	  break;
+      }
       
       if (thread_load.empty())
 	{
@@ -679,12 +747,18 @@ int main(void)
   std::cout << "\n";
   
   // Initialize experiments
-  struct experiment trivial_experiment, trivial_experiment_mt, fast_experiment, fast_experiment_mt;
+  struct experiment 
+	  trivial_experiment, 
+	  trivial_experiment_mt, 
+	  fast_experiment, 
+	  fast_experiment_mt,
+	  fast_experiment_mt_opt;
   
   init_experiment(&trivial_experiment);
   init_experiment(&trivial_experiment_mt);
   init_experiment(&fast_experiment);
   init_experiment(&fast_experiment_mt);
+  init_experiment(&fast_experiment_mt_opt);
   
   // Run experiments
   MULTI_THREAD_ON = false;
@@ -701,6 +775,7 @@ int main(void)
   
   
   MULTI_THREAD_ON = true;
+  THREAD_ALLOCATION_STRATEGY = UNIFORM_ALLOCATION;  
   
   t_start = std::chrono::high_resolution_clock::now();
   solve_trivial(trivial_experiment_mt);
@@ -711,6 +786,14 @@ int main(void)
   solve_fast(fast_experiment_mt);
   t_end = std::chrono::high_resolution_clock::now();
   time_fast_mt =  std::chrono::duration<double, std::milli>(t_end-t_start).count();
+
+  THREAD_ALLOCATION_STRATEGY = OPTIMIZED_ALLOCATION;
+  t_start = std::chrono::high_resolution_clock::now();
+  solve_fast(fast_experiment_mt_opt);
+  t_end = std::chrono::high_resolution_clock::now();
+  time_fast_mt_opt =  std::chrono::duration<double, std::milli>(t_end-t_start).count();
+
+
   
   // Check results
   if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment.M, max_dim, n))
@@ -730,6 +813,13 @@ int main(void)
       std::cout << "\n\n*****There are mismatches between naive and multi threaded dynamic methods. Exit now.*****\n";
       exit(-1);
     }
+
+  if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment_mt_opt.M, max_dim, n))
+    {
+      std::cout << "\n\n*****There are mismatches between naive and multi threaded dynamic methods. Exit now.*****\n";
+      exit(-1);
+    }
+
   
   // Prints
   print_stats();
