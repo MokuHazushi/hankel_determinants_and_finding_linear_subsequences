@@ -58,11 +58,11 @@
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-const int n=2048;//length data vector
+const int n=80;//length data vector
 const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
 const double ratio_size=1.0/16.0;
 const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
-const int max_number_of_thread = 12; // Maximum number of thread that can be created for each j-th row
+const int max_number_of_thread = 8; // Maximum number of thread that can be created for each j-th row
 
 /*
   Possible locations of the hidden linear subsequence.
@@ -88,7 +88,7 @@ const bool RUN_NAIVE_FLAG = true;
 const bool PRINT_COUNTS_FOR_DIRECT_COMPUTATION = false;
 // PRINT_COUNTS_FOR_DIRECT_COMPUTATION = true prints counts of the determinants that we were not able to catch with our theory and that required explicit computations.
 
-const bool PRINT_TRIA_TABLE=false;
+const bool PRINT_TRIA_TABLE=true;
 // To print triangular table(s) out.
 
 bool MULTI_THREAD_ON=false;
@@ -220,7 +220,7 @@ void init_experiment(struct experiment* experiment)
 	  experiment->flags_M[r1][c1]=false;
 	}
     }
-
+  
   for(int c1=0;c1<n;c1++)
     experiment->M[0][c1]=NTL::GF2(1);
   
@@ -233,12 +233,13 @@ void init_experiment(struct experiment* experiment)
     }
   
   for(int i2=0;i2<n;i2++)//j=0,1
+
     {
       experiment->M[0][i2]=NTL::GF2(1);
       experiment->flags_M[0][i2]=true;//flag as completed
       experiment->M[1][i2]=V0[i2];
       experiment->flags_M[1][i2]=true;
-  }
+    }
 }
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
@@ -328,7 +329,7 @@ std::vector<std::pair<int,int>> partition_thread_load(int j)
   only give a maximum boundary for the number of determinant that can be allocated to a thread.
   Returns an empty list if the computation of the j-th row should be handle by one (current) thread
 */
-std::vector<std::pair<int,int>> partition_thread_load_optimized(int j, NTL::Mat<bool> &flags_M)
+std::vector<std::pair<int,int>> partition_thread_load_optimized(int j, NTL::Mat<bool> & flags_M)
 {
   std::vector<std::pair<int, int>> result;
   int start_index = j-1;
@@ -343,33 +344,33 @@ std::vector<std::pair<int,int>> partition_thread_load_optimized(int j, NTL::Mat<
   int start = start_index;
   int nb_determinant_allocated = 0;
   for (int i=start_index; i<=end_index; i++) 
-  {
-    if (flags_M[j][i]) {
-      if (nb_determinant_allocated > 0)
-      {
-	// Allocate a thread
-	result.push_back(std::pair<int, int>(start, nb_determinant_allocated));
-	start = i;
-	nb_determinant_allocated = 0;
+    {
+      if (flags_M[j][i]) {
+	if (nb_determinant_allocated > 0)
+	  {
+	    // Allocate a thread
+	    result.push_back(std::pair<int, int>(start, nb_determinant_allocated));
+	    start = i;
+	    nb_determinant_allocated = 0;
+	  }
+	continue;
       }
-      continue;
+      
+      nb_determinant_allocated++;
+      if (nb_determinant_allocated >= determinant_per_thread)
+	{
+	  // Allocate a thread
+	  result.push_back(std::pair<int, int>(start, nb_determinant_allocated));
+	  start = i;
+	  nb_determinant_allocated = 0;
+	}
     }
-
-    nb_determinant_allocated++;
-    if (nb_determinant_allocated >= determinant_per_thread)
+  if (nb_determinant_allocated != 0)
     {
       // Allocate a thread
       result.push_back(std::pair<int, int>(start, nb_determinant_allocated));
-      start = i;
-      nb_determinant_allocated = 0;
     }
-  }
-  if (nb_determinant_allocated != 0)
-  {
-    // Allocate a thread
-    result.push_back(std::pair<int, int>(start, nb_determinant_allocated));
-  }
-    
+  
   return result;
 }
 
@@ -388,7 +389,7 @@ void s_f(struct experiment const & exp, int j)
 {
   /*
     Use knowledge of table with rows 0-th to (j-1)-th included to build square of zeros
-  
+    
     StartAtLeft & EndInMiddle
     StartAtLeft & EndAtRight
     StartInMiddle & EndInMiddle
@@ -615,9 +616,9 @@ void d_c_s(struct experiment const & exp, int j, int start, int range)
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-void solve_j_trivial(struct experiment const & exp, int j, int start, int range)
+void solve_j_trivial(struct experiment & experiment, int j, int start, int range)
 {
-  struct experiment & experiment = const_cast<struct experiment&>(exp);
+  //struct experiment & experiment = const_cast<struct experiment&>(exp);
   
   NTL::Mat<NTL::GF2> tmp;
   tmp.SetDims(j,j);
@@ -633,7 +634,9 @@ void solve_j_trivial(struct experiment const & exp, int j, int start, int range)
       for( int r = 0; r<j ; r++)
 	{
 	  for( int c = 0; c<j ; c++)
-	    tmp[r][c] = V0[(i+1-j+r+c)];
+	    {
+	      tmp[r][c] = V0[(i+1-j+r+c)];
+	    }
 	}
       experiment.M[j][i] = NTL::determinant(tmp);
     }
@@ -641,7 +644,7 @@ void solve_j_trivial(struct experiment const & exp, int j, int start, int range)
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-void solve_trivial(struct experiment experiment)
+void solve_trivial(struct experiment & experiment)
 {
   if (!MULTI_THREAD_ON)
     {
@@ -653,14 +656,14 @@ void solve_trivial(struct experiment experiment)
   
   // Multi thread solving
   for (int j=2; j<max_dim+1; j++)
-  {
-    std::vector<std::pair<int, int>> thread_load = partition_thread_load(j);
+    {
+      std::vector<std::pair<int, int>> thread_load = partition_thread_load(j);
     
     if (thread_load.empty())
-    {
-      solve_j_trivial(std::ref(experiment), j, j-1, n-2*j+2);
-      continue;
-    }
+      {
+	solve_j_trivial(std::ref(experiment), j, j-1, n-2*j+2);
+	continue;
+      }
     
     std::thread* thread_pool = new std::thread[thread_load.size()];
     for (size_t k=0; k<thread_load.size(); k++)
@@ -669,7 +672,7 @@ void solve_trivial(struct experiment experiment)
       thread_pool[k].join();
     
     delete[] thread_pool;
-  }
+    }
 }
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
@@ -682,7 +685,7 @@ void solve_j_fast(struct experiment const & exp, int j, int start, int range)
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-void solve_fast(struct experiment experiment)
+void solve_fast(struct experiment & experiment)
 {
   if (!MULTI_THREAD_ON)
     {
@@ -794,35 +797,39 @@ int main(void)
   time_fast_mt_opt =  std::chrono::duration<double, std::milli>(t_end-t_start).count();
 
 
-  
+  // Prints
+  print_stats();
+
   // Check results
   if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment.M, max_dim, n))
     {
-      std::cout << "\n\n*****There are mismatches between naive and new dynamic methods single threaded. Exit now.*****\n";
-      exit(-1);
+      std::cout << "\n\n*****Mismatches between trivial single threaded and fast single threaded.*****\n";
+      print_ntl_gf2_mat(trivial_experiment.M+fast_experiment.M,max_dim,n,(int)floor(1.0+(log(max_dim)/log(10))));
+      //exit(-1);
     }
   
   if (chk_triangular_tables_not_the_same(trivial_experiment.M, trivial_experiment_mt.M, max_dim, n))
     {
-      std::cout << "\n\n*****There are mismatches between naive and multi threaded trivial methods. Exit now.*****\n";
-      exit(-1);
+      std::cout << "\n\n*****Mismatches trivial single threaded and trivial multi threaded.*****\n";
+      print_ntl_gf2_mat(trivial_experiment.M+trivial_experiment_mt.M,max_dim,n,(int)floor(1.0+(log(max_dim)/log(10))));
+      //exit(-1);
     }
   
   if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment_mt.M, max_dim, n))
     {
-      std::cout << "\n\n*****There are mismatches between naive and multi threaded dynamic methods. Exit now.*****\n";
-      exit(-1);
+      std::cout << "\n\n*****Mismatche trivial single threaded and fast multi threaded.*****\n";
+      print_ntl_gf2_mat(trivial_experiment.M+fast_experiment_mt.M,max_dim,n,(int)floor(1.0+(log(max_dim)/log(10))));
+      //exit(-1);
     }
 
   if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment_mt_opt.M, max_dim, n))
     {
-      std::cout << "\n\n*****There are mismatches between naive and multi threaded dynamic methods. Exit now.*****\n";
-      exit(-1);
+      std::cout << "\n\n*****Mismatches trivial and fast optimized multi threaded.*****\n";
+      print_ntl_gf2_mat(trivial_experiment.M+fast_experiment_mt_opt.M,max_dim,n,(int)floor(1.0+(log(max_dim)/log(10))));
+      //exit(-1);
     }
 
   
-  // Prints
-  print_stats();
-  
+ 
   return 0;
 }
