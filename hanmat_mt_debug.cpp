@@ -60,7 +60,7 @@
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-const int n=512;//length data vector
+const int n=41;//length data vector
 const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
 const double ratio_size=1.0/16.0;
 const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
@@ -102,12 +102,12 @@ NTL::Vec<NTL::GF2> V0;//data vector to be filled with a linear subsequence
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 std::mutex assignment_mutex;
-void assign_GF2bool(NTL::Mat<bool> mat, bool val, int i, int j)
+void assign_GF2(NTL::Mat<NTL::GF2> mat, NTL::GF2 val, int j, int i)
 {
   if (MULTI_THREAD_ON)
     std::lock_guard<std::mutex> lg(assignment_mutex);
 
-  mat[i][j] = val;
+  mat[j][i] = val;
 }
 
 struct experiment {
@@ -172,7 +172,7 @@ void print_ntl_gf2_mat(NTL::Mat<NTL::GF2> M,int max_dim,int n,int out_width1)
 }
 
 //Procedure pour aider a debugger
-void how_many_differences(NTL::Mat<NTL::GF2> M,int max_dim,int n,int & nb_differences, struct experiment E)
+void how_many_differences(NTL::Mat<NTL::GF2> M,int max_dim,int n,int & nb_differences)
 {
   
   //M est le XOR de deux tableaux
@@ -192,7 +192,7 @@ void how_many_differences(NTL::Mat<NTL::GF2> M,int max_dim,int n,int & nb_differ
       {
 	if(M[r0][c0]==NTL::GF2(1))
 	  {
-	    if(E.M[r0][c0]==false){std::cout << "Mismatch " << r0 << " " << c0 << "\n";}
+	    std::cout << "Mismatch " << r0 << " " << c0 << "\n";
 	    nb_differences++;
 	  }
       }
@@ -340,17 +340,20 @@ std::vector<std::pair<int,int>> partition_thread_load(int j)
 
     
   // Uniform share strategy
-  int quo = (n-2*j+2) / max_number_of_thread;
-  int rem = (n-2*j+2) % max_number_of_thread;
- 
-  for(long a = 0 ; a < quo; a++)//par paquet de max_number_of_thread, debutant a j-1=i, interval = [j-1+a*S,j-1+a*S+S), S = number of threads
+  int quo = (n-2*j+2) / (max_number_of_thread-1);
+  int rem = (n-2*j+2) % (max_number_of_thread-1);
+
+  if(quo!=0)
     {
-      result.push_back(std::pair<int,int>(j-1+a*max_number_of_thread,max_number_of_thread));
+      for(long a = 0 ; a < max_number_of_thread-1; a++)//par paquet de max_number_of_thread, debutant a j-1=i, interval = [j-1+a*S,j-1+a*S+S), S = number of threads
+	{
+	  result.push_back(std::pair<int,int>(j-1+a*quo,quo));
+	}
     }
   
   if(rem!=0)//possible reste
     {
-      result.push_back(std::pair<int,int>(j-1+quo*max_number_of_thread,rem));
+      result.push_back(std::pair<int,int>(j-1+quo*(max_number_of_thread-1),rem));
     }
   return result;
  
@@ -570,7 +573,8 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 		    {
 		      for(int c = 0; c<j ; c++)
 			{
-			  tmp[c][r] = experiment.M[t_x][i-r+c];//==V0[i-j+r+c+1];
+			  //tmp[c][r] = experiment.M[t_x][i-r+c];//==V0[i-j+r+c+1];
+			  tmp[c][r] = V0[i-j+r+c+1];
 			}
 		    }
 		  experiment.M[j][i] = NTL::determinant(tmp);
@@ -609,7 +613,8 @@ void solve_j_trivial(struct experiment & experiment, int j, int start, int range
       for(int c1=0;c1<j;c1++)
 	tmp[r1][c1]=0;
     }
-    
+
+  
   for(int i = start; i<start+range; i++)//pour single thread est equivalent a i=j-1 ... i < j-1+n-2*j+2=n-j+1
     {
       for( int r = 0; r<j ; r++)
@@ -620,8 +625,9 @@ void solve_j_trivial(struct experiment & experiment, int j, int start, int range
 	    }
 	}
       experiment.M[j][i] = NTL::determinant(tmp);
+      //assign_GF2(experiment.M,NTL::determinant(tmp),j,i);
     }
-   
+ 
 }
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
@@ -644,28 +650,27 @@ void solve_trivial(struct experiment & experiment)
 
       
       if (thread_load.empty())//impossible maintenant avec la facon de partitionner le travail
-      {
-	std::cout << "In debug version. Ne devrait pas se produire avec la facon de diviser les taches. - EXIT\n";
-	exit(-1);
-	solve_j_trivial(experiment, j, j-1, n-2*j+2);
-	continue;
-      }
-      
-      std::thread* thread_pool = new std::thread[thread_load.size()];
+	{
+	  std::cout << "In debug version. Ne devrait pas se produire avec la facon de diviser les taches. - EXIT\n";
+	  exit(-1);
+	  solve_j_trivial(experiment, j, j-1, n-2*j+2);
+	  continue;
+	}
+      std::cout << "range # " << j << " : " << j-1 << " <= i < " << n-j+1 << " :: " ;
+      std::thread * thread_pool = new std::thread[thread_load.size()];
       for (unsigned int k=0; k<thread_load.size(); k++)
 	{
-	  //std::cout << thread_load[k].first << ", " << thread_load[k].second << " | ";//Decommenter pour voir bornes inferieures des intervalles et nombre de points par intervalles
+	  std::cout << thread_load[k].first << ", " << thread_load[k].second << " | ";//Decommenter pour voir bornes inferieures des intervalles et nombre de points par intervalles
 	  thread_pool[k] = std::thread(&solve_j_trivial, std::ref(experiment), j, thread_load[k].first, thread_load[k].second);
 	}
       
-      //std::cout << "\n";//Decommenter pour afficher sauf ligne-intervalles
+      std::cout << "\n";//Decommenter pour afficher sauf ligne-intervalles
       
       for (unsigned int k=0; k<thread_load.size(); k++)
 	{
 	  thread_pool[k].join();
 	}
-     
-     
+          
       delete[] thread_pool;
     }
 }
@@ -748,7 +753,6 @@ int main(void)
     trivial_experiment_mt, 
     fast_experiment;
   
-  
   init_experiment(trivial_experiment);
   init_experiment(trivial_experiment_mt);
   init_experiment(fast_experiment);
@@ -782,7 +786,7 @@ int main(void)
   // Check results
   if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment.M, max_dim, n))
     {
-      how_many_differences(trivial_experiment.M+fast_experiment.M,max_dim,n,nb_differences,fast_experiment);
+      how_many_differences(trivial_experiment.M+fast_experiment.M,max_dim,n,nb_differences);
       std::cout << "\n\n*****Mismatches between trivial single threaded and fast single threaded.*****\n";
       std::cout << "#####Number of mismatches = " << nb_differences << "\n";
       std::cout << "EXIT - big problem\n";
@@ -791,7 +795,7 @@ int main(void)
   
   if (chk_triangular_tables_not_the_same(trivial_experiment.M, trivial_experiment_mt.M, max_dim, n))
     {
-      how_many_differences(trivial_experiment.M+trivial_experiment_mt.M,max_dim,n,nb_differences,trivial_experiment_mt);
+      how_many_differences(trivial_experiment.M+trivial_experiment_mt.M,max_dim,n,nb_differences);
      
       std::cout << "\n\n*****Mismatches trivial single threaded and trivial multi threaded.*****\n";
       std::cout << "#####Number of mismatches = " << nb_differences << "\n";
@@ -799,7 +803,26 @@ int main(void)
       //exit(-1);
     }
   
- 
+  /************/
+  //For debug, reset and restart... we get different mismatched outputs for the same input
+  for(long j = 2; j<max_dim+1;j++)
+    {
+      for(long i = j-1;i<n-j+1;i++)
+	{
+	  trivial_experiment_mt.M[j][i]=NTL::GF2(0);
+	}
+    }
+  solve_trivial(trivial_experiment_mt);
+  if (chk_triangular_tables_not_the_same(trivial_experiment.M, trivial_experiment_mt.M, max_dim, n))
+    {
+      //premier argument est le XOR des deux calculs dans GF2
+      how_many_differences(trivial_experiment.M+trivial_experiment_mt.M , max_dim , n , nb_differences);
+     
+      std::cout << "\n\n+++++Mismatches trivial single threaded and trivial multi threaded.\n";
+      std::cout << "#####Number of mismatches = " << nb_differences << "\n";
+      //print_ntl_gf2_mat(trivial_experiment_mt.M, max_dim, n,(int)floor(1.0+(log(max_dim)/log(10))));
+      //exit(-1);
+    }
 
   
  
