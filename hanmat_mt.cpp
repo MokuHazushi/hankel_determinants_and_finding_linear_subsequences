@@ -54,14 +54,14 @@
 #include <NTL/GF2.h>
 #include <NTL/vec_vec_GF2.h>
 #include <NTL/mat_GF2.h>
-
+#include <NTL/BasicThreadPool.h>
 
 
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
 const int n=256;//length data vector//7*8*9=504,131, 521, 1031, 1543, 2027 
-const int nb_trials=100;//100;//sample size for timing (and debugging)
+const int nb_trials=100;//sample size for timing (and debugging)
 const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
 const double ratio_size=1.0/16.0;
 const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
@@ -622,18 +622,12 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 
 void solve_j_trivial(struct experiment & experiment, int j, int start, int range)
 {
-  NTL::Mat<NTL::GF2> tmp;
-  tmp.SetDims(j,j);
-  
-  for(int r1=0;r1<j;r1++)
-    {
-      for(int c1=0;c1<j;c1++)
-	tmp[r1][c1]=0;
-    }
-  
-  
+   
   for(int i = start; i<start+range; i++)//pour single thread est equivalent a i=j-1 ... i < j-1+n-2*j+2=n-j+1
     {
+      NTL::Mat<NTL::GF2> tmp;
+      tmp.SetDims(j,j);
+     
       for( int r = 0; r<j ; r++)
 	{
 	  for( int c = 0; c<j ; c++)
@@ -645,12 +639,14 @@ void solve_j_trivial(struct experiment & experiment, int j, int start, int range
       
       //To make the multi thread trivial method FASTER than mono thread trivial, then find a way to remove the following lock_guard.
       //IL FAUT regler au moins ceci si possible.
+   
       std::lock_guard<std::mutex> guard(problem_fixing_mutex);
       experiment.M[j][i] = NTL::determinant(tmp);
-      
       experiment.flags_M[j][i] = true;
      
     }
+ 
+
 }
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
@@ -751,7 +747,6 @@ void solve_fast(struct experiment & experiment)
 
 int main(void)
 {
-  
   std::cout.precision(6);
   std::cout.setf( std::ios::fixed, std::ios::floatfield );
   
@@ -773,7 +768,7 @@ int main(void)
   
   for(long ct_trial = 0; ct_trial<nb_trials;ct_trial++)
     { 
-      std::cout << "Test # " << ct_trial+1 << " / " << nb_trials << "\n";
+      std::cout << "Test # " << ct_trial+1 << " / " << nb_trials << " ";
       std::cout.flush();
       
       // Initialize data
@@ -827,9 +822,9 @@ int main(void)
       if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment.M, max_dim, n))
 	{
 	  how_many_differences(trivial_experiment.M+fast_experiment.M,max_dim,n,nb_differences);
-	  std::cout << "\n\n*****Mismatches between trivial single threaded and fast single threaded.*****\n";
-	  std::cout << "#####Number of mismatches = " << nb_differences << "\n";
-	  std::cout << "EXIT - big problem\n";//Given the severity of a mismatch here, we exit whenever it could occur.
+	  std::cerr << "\n\n*****Mismatches between trivial single threaded and fast single threaded.*****\n";
+	  std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
+	  std::cerr << "EXIT - big problem\n";//Given the severity of a mismatch here, we exit whenever it could occur.
 	  exit(-1);
 	}
       
@@ -837,8 +832,8 @@ int main(void)
 	{
 	  //how_many_differences(trivial_experiment.M+trivial_experiment_mt.M,max_dim,n,nb_differences);
 	  
-	  //std::cout << "\n\n*****Mismatches trivial single threaded and trivial multi threaded.*****\n";
-	  //std::cout << "#####Number of mismatches = " << nb_differences << "\n";
+	  //std::cerr << "\n\n*****Mismatches trivial single threaded and trivial multi threaded.*****\n";
+	  //std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
 	  //print_ntl_gf2_mat(trivial_experiment_mt.M, max_dim, n,(int)floor(1.0+(log(max_dim)/log(10))));
 	  //exit(-1);
 	  chk_III=true;
@@ -848,8 +843,8 @@ int main(void)
 	{
 	  //how_many_differences(trivial_experiment.M+fast_experiment_mt.M,max_dim,n,nb_differences);
 	  
-	  //std::cout << "\n\n*****Mismatches trivial single threaded and fast multi threaded.*****\n";
-	  //std::cout << "#####Number of mismatches = " << nb_differences << "\n";
+	  //std::cerr << "\n\n*****Mismatches trivial single threaded and fast multi threaded.*****\n";
+	  //std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
 	  //print_ntl_gf2_mat(trivial_experiment_mt.M, max_dim, n,(int)floor(1.0+(log(max_dim)/log(10))));
 	  //exit(-1);
 	  chk_IV=true;
@@ -859,6 +854,7 @@ int main(void)
 	{
 	  ct_problems++;
 	}
+      std::cout << "  ***** " << ct_problems << " | " << sum_of_time_differences[0]/(double)(ct_trial+1) << " " << sum_of_time_differences[2]/(double)(ct_trial+1) << " " << sum_of_time_differences[1]/(double)(ct_trial+1) << " " << sum_of_time_differences[3]/(double)(ct_trial+1) << "\n"; 
     }
 
   std::cout << "\n\n***** ***** ***** ***** ***** ***** ***** ***** ***** *****\n"
