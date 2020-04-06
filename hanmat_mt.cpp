@@ -61,7 +61,7 @@
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
 const int n=256;//length data vector//7*8*9=504,131, 521, 1031, 1543, 2027 
-const int nb_trials=100;//sample size for timing (and debugging)
+const int nb_trials=100;//100;//sample size for timing (and debugging)
 const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
 const double ratio_size=1.0/16.0;
 const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
@@ -343,24 +343,32 @@ std::vector<std::pair<int,int>> partition_thread_load(int j)
   //Si j = 2, alors positions sont 1,2,3
   //j-1 = 1, n-j+1 = 5-2+1 = 4, donc j-1 <= i < n-j+1
     
-  // Uniform share strategy
-  int quo = (n-2*j+2) / (number_of_threads-1);//we keep one thread for the possible remainder 
-  int rem = (n-2*j+2) % (number_of_threads-1);//ibid previous comment
-
-  if(quo!=0)
+  if(n-2*j+2 > number_of_threads)//then uniformly distribute number of tasks on the maximal number of allowed threads
     {
-      for(long a = 0 ; a < number_of_threads-1; a++)//par sous-intervalle de longueur = quo
+      // Uniform share strategy
+      int quo = (n-2*j+2) / number_of_threads; 
+      int rem = (n-2*j+2) % number_of_threads;
+      
+      for(long a = 0 ; a < rem; a++)
 	{
-	  result.push_back(std::pair<int,int>(j-1+a*quo,quo));
+	  result.push_back(std::pair<int,int>(j-1+a*(quo+1),quo+1));//for thread 0 to rem-1 inclusively, give them 1 more task then the quotient as the number of tasks
+	}
+      	
+      for(long a = 0 ; a < number_of_threads-rem ; a++)//for thread rem to number_of_threads-1, give them quotient as the number of tasks
+	{
+	  result.push_back(std::pair<int,int>(j-1+rem*(quo+1)+a*quo,quo));
+	}
+    }
+  else//then distribute one task per thread on n-2*j+2 threads < number_of_threads
+    {
+      for(long a = 0 ; a < n-2*j+2 ; a++)//safe no out of bound since n-2*j+2 <= number_of_threads
+	{
+	  result.push_back(std::pair<int,int>(a+(j-1),1));
 	}
     }
   
-  if(rem!=0)//possible remainder
-    {
-      result.push_back(std::pair<int,int>(j-1+quo*(number_of_threads-1),rem));
-    }
 
-  //if(result.empty()){std::cerr << "List for the distribution of workloads is empty. EXIT\n";exit(-1);}//This should never happen. La seule facon que cela pourrait se produire est si n-2j+2=0 or impossible.
+  if(result.empty()){std::cerr << "List for the distribution of workloads is empty. EXIT\n";exit(-1);}//This should never happen. La seule facon que cela pourrait se produire est si n-2j+2=0 or impossible.
 
   return result;
  
@@ -664,9 +672,9 @@ void solve_trivial(struct experiment & experiment)
 	{
 	  std::vector<std::pair<int, int>> thread_load = partition_thread_load(j);
 	  
-	  //Decommenter les lignes post-fixes du commentaire PRINT_WORKLOAD pour voir bornes inferieures des intervalles et nombre de points par intervalles
 	  
-	  //std::cout << "range # " << j << " : " << j-1 << " <= i < " << n-j+1 << " :: ";//PRINT_WORKLOAD
+	  //Uncomment lines followed by PRINT_WORKLOAD to see work loads and left inclusive boundaries for each sub-interval. Suggestion set nb_trials=1.
+	  //std::cout << "row # " << j << " : " << j-1 << " <= i < " << n-j+1 << " :: ";//PRINT_WORKLOAD
 	  
 	  for (unsigned int k=0; k<thread_load.size(); k++)
 	    {
