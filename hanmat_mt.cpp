@@ -65,7 +65,7 @@ const int nb_trials=100;//sample size for timing (and debugging)
 const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
 const double ratio_size=1.0/16.0;
 const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
-const int number_of_threads = 8; // Maximum number of thread that can be created for each j-th row
+const int number_of_threads = 16; // Maximum number of thread that can be created for each j-th row
 
 /*
   Possible locations of the hidden linear subsequence.
@@ -239,6 +239,17 @@ void generate_initial_data()
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
+void assign_GF2(NTL::Mat<NTL::GF2> & M, NTL::GF2 value, int j, int i)
+{
+	if (MULTI_THREAD_ON) {
+		problem_fixing_mutex.lock();
+		M.put(j, i, value);
+		problem_fixing_mutex.unlock();
+	}
+	else
+		M.put(j, i, value);
+}
+
 void init_experiment(struct experiment & experiment)
 {
 
@@ -336,34 +347,30 @@ bool chk_triangular_tables_not_the_same(NTL::Mat<NTL::GF2> M1, NTL::Mat<NTL::GF2
 std::vector<std::pair<int,int>> partition_thread_load(int j)
 {
   std::vector<std::pair<int, int>> result;
-  //int start_index = j-1;
-  //int end_index = n-j+1;
 
   //Example reference: n = 5, donc positions sont 0,1,2,3,4
   //Si j = 2, alors positions sont 1,2,3
   //j-1 = 1, n-j+1 = 5-2+1 = 4, donc j-1 <= i < n-j+1
     
-  if(n-2*j+2 > number_of_threads)//then uniformly distribute number of tasks on the maximal number of allowed threads
+  if(n-2*j+1 > number_of_threads)//then uniformly distribute number of tasks on the maximal number of allowed threads
     {
       // Uniform share strategy
-      int quo = (n-2*j+2) / number_of_threads; 
-      int rem = (n-2*j+2) % number_of_threads;
+      int quo = (n-2*j+1) / number_of_threads;
+      int rem = (n-2*j+1) % number_of_threads;
       
-      for(long a = 0 ; a < rem; a++)
+      for(long a = 0 ; a < number_of_threads; a++)
 	{
-	  result.push_back(std::pair<int,int>(j-1+a*(quo+1),quo+1));//for thread 0 to rem-1 inclusively, give them 1 more task then the quotient as the number of tasks
+	  result.push_back(std::pair<int,int>(j-1+a*quo,quo+1));//for thread 0 to rem-1 inclusively, give them 1 more task then the quotient as the number of tasks
 	}
       	
-      for(long a = 0 ; a < number_of_threads-rem ; a++)//for thread rem to number_of_threads-1, give them quotient as the number of tasks
-	{
-	  result.push_back(std::pair<int,int>(j-1+rem*(quo+1)+a*quo,quo));
-	}
+      if (rem != 0)
+	 result.push_back(std::pair<int,int>(j-1+(number_of_threads*quo), rem+1));
     }
   else//then distribute one task per thread on n-2*j+2 threads < number_of_threads
     {
-      for(long a = 0 ; a < n-2*j+2 ; a++)//safe no out of bound since n-2*j+2 <= number_of_threads
+      for(long a = (j-1) ; a <= n-j ; a++)//safe no out of bound since n-2*j+2 <= number_of_threads
 	{
-	  result.push_back(std::pair<int,int>(a+(j-1),1));
+	  result.push_back(std::pair<int,int>(a,1));
 	}
     }
   
@@ -462,7 +469,7 @@ void s_f(struct experiment & experiment, int j)
 		  for(int x_i=x_i_l;x_i<=x_i_r;x_i++)
 		    {
 		      //std::lock_guard<std::mutex> guard(problem_fixing_mutex);
-		      experiment.M[x_j][x_i]=NTL::GF2(0);
+		      experiment.M[x_j][x_i] = NTL::GF2(0);
 		      experiment.flags_M[x_j][x_i]=true;
 		    }
 		}
@@ -528,7 +535,13 @@ bool chk_conds_for_solvability(struct experiment & experiment, int j, int i, int
 	{
 	  for(int cx=0;cx<w1;cx++)
 	    {
-	      experiment.AspTL[w1][rx][cx] = experiment.M[j-2*w1+rx+cx][i-rx+cx];
+              if (MULTI_THREAD_ON) {
+		problem_fixing_mutex.lock();
+	      	experiment.AspTL[w1][rx][cx] = experiment.M[j-2*w1+rx+cx][i-rx+cx];
+		problem_fixing_mutex.unlock();
+	      }
+	      else
+	      	experiment.AspTL[w1][rx][cx] = experiment.M[j-2*w1+rx+cx][i-rx+cx];
 	    }
 	}
       
@@ -559,12 +572,14 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 	  
 	  if( (j>=2) && (experiment.M[j-2][i]==NTL::GF2(1)) )//North-South-East-West
 	    {
-	      experiment.M[j][i] = experiment.M[j-1][i-1]*experiment.M[j-1][i+1]+experiment.M[j-1][i];
+	      NTL::GF2 determinant = experiment.M[j-1][i-1]*experiment.M[j-1][i+1]+experiment.M[j-1][i];
+	      assign_GF2(experiment.M, determinant, j, i);
 	      experiment.flags_M[j][i]=true;
 	    }
 	  else if ( (j>=2*max_len_side_grid) && chk_conds_for_solvability(experiment, j, i, effective_len) )
 	    {
-	      experiment.M[j][i] = solve_eq_for_lower_corner(experiment, j, i, effective_len);
+	      NTL::GF2 determinant = solve_eq_for_lower_corner(experiment, j, i, effective_len);
+	      assign_GF2(experiment.M, determinant, j, i);
 	      experiment.flags_M[j][i] = true;
 	    }
 	  else
@@ -593,7 +608,8 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 			}
 		    }
 		 
-		  experiment.M[j][i] = NTL::determinant(tmp);
+		  NTL::GF2 determinant = NTL::determinant(tmp);
+		  assign_GF2(experiment.M, determinant, j, i);
 		  experiment.flags_M[j][i]=true;
 		
 		}
@@ -608,7 +624,8 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 			tmp[r][c]=experiment.M[j-(t_x-1)][i+c-r];
 		    }
 		 
-		  experiment.M[j][i] = NTL::determinant(tmp);
+		  NTL::GF2 determinant = NTL::determinant(tmp);
+		  assign_GF2(experiment.M, determinant, j, i);
 		  experiment.flags_M[j][i]=true;
 	       
 		}
@@ -619,6 +636,7 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 }
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
+
 
 void solve_j_trivial(struct experiment & experiment, int j, int start, int range)
 {
@@ -640,9 +658,9 @@ void solve_j_trivial(struct experiment & experiment, int j, int start, int range
       //To make the multi thread trivial method FASTER than mono thread trivial, then find a way to remove the following lock_guard.
       //IL FAUT regler au moins ceci si possible.
    
-      std::lock_guard<std::mutex> guard(problem_fixing_mutex);
-      experiment.M[j][i] = NTL::determinant(tmp);
-      experiment.flags_M[j][i] = true;
+      NTL::GF2 determinant = NTL::determinant(tmp);
+      assign_GF2(experiment.M, determinant, j, i);
+      //experiment.flags_M[j][i] = true;
      
     }
  
@@ -657,17 +675,16 @@ void solve_trivial(struct experiment & experiment)
     {
       // Single thread solving
       for (int j=2; j<max_dim+1; j++)
-	solve_j_trivial(std::ref(experiment), j, j-1, n-2*j+2);
+	solve_j_trivial(experiment, j, j-1, n-2*j+2);
     }
   else
     {
       // Multi thread solving
-      std::thread * thread_pool = new std::thread[number_of_threads];
 
       for (int j=2; j<max_dim+1; j++)
 	{
 	  std::vector<std::pair<int, int>> thread_load = partition_thread_load(j);
-	  
+      	  std::thread * thread_pool = new std::thread[thread_load.size()];
 	  
 	  //Uncomment lines followed by PRINT_WORKLOAD to see work loads and left inclusive boundaries for each sub-interval. Suggestion set nb_trials=1.
 	  //std::cout << "row # " << j << " : " << j-1 << " <= i < " << n-j+1 << " :: ";//PRINT_WORKLOAD
@@ -680,13 +697,10 @@ void solve_trivial(struct experiment & experiment)
 	  //std::cout << "\n";//PRINT_WORKLOAD
 	  
 	  for (unsigned int k=0; k<thread_load.size(); k++)
-	    {
 	      thread_pool[k].join();
-	    }
-          
-	 
+
+      	  delete [] thread_pool;
 	}
-      delete [] thread_pool;
     }
 }
 
@@ -695,12 +709,7 @@ void solve_trivial(struct experiment & experiment)
 void solve_j_fast(struct experiment & exp, int j, int start, int range)
 {
   //Do not use two different mutex for s_f and d_c_s because it may yield wrong results.
-  
-  std::lock_guard<std::mutex> guard_s_f(problem_fixing_mutex);
-  s_f(exp, j);//The sqaure filling of zeros must always be done on a single thread. 
- 
   d_c_s(exp, j, start, range);
- 
 }
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
@@ -712,20 +721,21 @@ void solve_fast(struct experiment & experiment)
       // Single thread solving
       for (int j=2; j<max_dim+1; j++)
 	{
-	  solve_j_fast(std::ref(experiment), j, j-1, n-2*j+2);
+  	  s_f(experiment, j);
+	  solve_j_fast(experiment, j, j-1, n-2*j+2);
 	}
-    
     }
   else
     {
       // Multi thread solving
 
-      std::thread* thread_pool = new std::thread[number_of_threads];
       
       for (int j=2; j<max_dim+1; j++)
 	{
 	  std::vector<std::pair<int, int>> thread_load = partition_thread_load(j);//We can't have optimized strategy for the workloads that uses the flags before the square filling is over. For the uniform stategy it does not matter.
-	  
+      	  std::thread* thread_pool = new std::thread[thread_load.size()];
+
+	  s_f(experiment, j);
    	  for (size_t k=0; k<thread_load.size(); k++)
 	    {
 	      //Make sure that inside solve_j_fast, the square filling is done mono thread only as it cannot be multi threaded.
@@ -734,12 +744,10 @@ void solve_fast(struct experiment & experiment)
 	    }
 	  
 	  for (size_t k=0; k<thread_load.size(); k++)
-	    {
 	      thread_pool[k].join();
-	    }
       
+          delete [] thread_pool;
 	}
-      delete [] thread_pool;
     }
 }
 
@@ -830,23 +838,25 @@ int main(void)
       
       if (chk_triangular_tables_not_the_same(trivial_experiment.M, trivial_experiment_mt.M, max_dim, n))
 	{
-	  //how_many_differences(trivial_experiment.M+trivial_experiment_mt.M,max_dim,n,nb_differences);
+	  how_many_differences(trivial_experiment.M+trivial_experiment_mt.M,max_dim,n,nb_differences);
 	  
-	  //std::cerr << "\n\n*****Mismatches trivial single threaded and trivial multi threaded.*****\n";
-	  //std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
-	  //print_ntl_gf2_mat(trivial_experiment_mt.M, max_dim, n,(int)floor(1.0+(log(max_dim)/log(10))));
-	  //exit(-1);
-	  chk_III=true;
+	  std::cerr << "\n\n*****Mismatches trivial single threaded and trivial multi threaded.*****\n";
+	  std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
+	  print_ntl_gf2_mat(trivial_experiment_mt.M, max_dim, n,(int)floor(1.0+(log(max_dim)/log(10))));
+	  exit(-1);
+	  //chk_III=true;
 	}
       
       if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment_mt.M, max_dim, n))
 	{
-	  //how_many_differences(trivial_experiment.M+fast_experiment_mt.M,max_dim,n,nb_differences);
+	  /*
+	  how_many_differences(trivial_experiment.M+fast_experiment_mt.M,max_dim,n,nb_differences);
 	  
-	  //std::cerr << "\n\n*****Mismatches trivial single threaded and fast multi threaded.*****\n";
-	  //std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
-	  //print_ntl_gf2_mat(trivial_experiment_mt.M, max_dim, n,(int)floor(1.0+(log(max_dim)/log(10))));
-	  //exit(-1);
+	  std::cerr << "\n\n*****Mismatches trivial single threaded and fast multi threaded.*****\n";
+	  std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
+	  print_ntl_gf2_mat(trivial_experiment_mt.M, max_dim, n,(int)floor(1.0+(log(max_dim)/log(10))));
+	  exit(-1);
+	  */
 	  chk_IV=true;
 	}
 
