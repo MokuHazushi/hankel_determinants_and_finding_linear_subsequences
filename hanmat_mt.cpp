@@ -27,16 +27,15 @@
   
   AUTHORS: Claude Gravel and Bastien Rigault
   
-  VERSION: 2.1 (April 2020)
+  DATE: April 7th, 2020 
   
   TECHNICAL REFERENCE: (arxiv) "Finding linearly generated subsequences" by Claude Gravel and Daniel Panario
 
   NOTES:
   
-  This code relies on NTL library which depends on GMPL.
+  This code relies on NTL library which may (or may not) depend on GMPL.
   For information about NTL (Number Theory Library) see: https://www.shoup.net/ntl/
   For information about GMPL (GNU Multiple Precision Arithmetic Library) see: https://gmplib.org/
-
  
 */
 
@@ -60,12 +59,12 @@
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-const int n=512;//length data vector//7*8*9=504,131, 521, 1031, 1543, 2027 
+const int n=2048;//length data vector
 const int nb_trials=100;//sample size for timing (and debugging)
 const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
 const double ratio_size=1.0/16.0;
 const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
-const int number_of_threads = 10; // Maximum number of thread that can be created for each j-th row
+const int number_of_threads = 35; // Maximum number of thread that can be created for each j-th row
 
 /*
   Possible locations of the hidden linear subsequence.
@@ -100,6 +99,8 @@ NTL::Vec<NTL::GF2> V0;//data vector to be filled with a linear subsequence
 std::mutex determinant_mutex;
 std::mutex asptl_mutex;
 
+/**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
+
 struct experiment {
   NTL::Mat<NTL::GF2> M;
   NTL::Mat<bool> flags_M; // Not used by trivial approach
@@ -109,8 +110,7 @@ struct experiment {
 struct determinant_result {
   int j, i;
   NTL::GF2 determinant;
-};
-
+};//Data structure used to make the multithread version of our fast algorithm outputs correct result when use with NTL.
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
@@ -118,6 +118,10 @@ struct determinant_result {
 
 void print_stats(double time_triv_st, double time_triv_mt, double time_fast_st, double time_fast_mt)// for timing
 {
+  /*
+    To output timing results for a single case.
+  */
+  
   int number_of_entries = ((n%2)==0)*((n/2)-1)*(n/2)+((n%2)==1)*(n/2)*(n-1)/2;
   int out_width0 = (int)floor(1.0+(log(n)/log(10)));
   
@@ -139,6 +143,10 @@ void print_stats(double time_triv_st, double time_triv_mt, double time_fast_st, 
 
 void print_initial_data(void)
 {
+  /*
+    To output the generating vector used to hide the linear subsequence,
+    and the input sequence itself.
+  */
   
   //std::cout << "\n\n";
   std::cout << "Original sequence (is identical to row 1 of triangular table), length = " << V0.length() << ", sequence:\n     ";
@@ -155,14 +163,13 @@ void print_initial_data(void)
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-/*
-  DESCRIPTION
-  print_ntl_gf2_mat prints on the standard output M with max_dim rows, and n columns.
-  out_width1 is to control the number of caracters for the index of the row.
-*/
-
 void print_ntl_gf2_mat(NTL::Mat<NTL::GF2> M,int max_dim,int n,int out_width1)
 {
+  /*
+    DESCRIPTION
+    print_ntl_gf2_mat prints on the standard output M with max_dim rows, and n columns.
+    out_width1 is to control the number of caracters for the index of the row.
+  */
   
   std::cout << "\n";
   std::cout << std::setw(out_width1) << 0 << " : ";
@@ -182,11 +189,19 @@ void print_ntl_gf2_mat(NTL::Mat<NTL::GF2> M,int max_dim,int n,int out_width1)
   }
 }
 
-//Procedure pour aider a debugger
+/**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
+
 void how_many_differences(NTL::Mat<NTL::GF2> M,int max_dim,int n,int & nb_differences)
 {
   
-  //M est le XOR de deux tableaux
+  /*
+    Use to validate correctness of different algorithms that compute the triangular table.
+
+    M is the XOR (GF2 sum) of two matrices. Usually the sum of the matrix from the trivial
+    mono thread algorithm and the matrix from another algorithm. nb_differences is the
+    number of differences between the two matrices.
+  */
+
   nb_differences=0;
   for(int c0=0;c0 < n;c0++)
     {
@@ -215,6 +230,14 @@ void how_many_differences(NTL::Mat<NTL::GF2> M,int max_dim,int n,int & nb_differ
 /* UTILS FUNCTIONS */
 void generate_initial_data()
 {
+  /*
+    Create an input sequence and a generating vector for the LFSR used to create
+    the linear subsequence. The linear subsequence begins at position left_index and 
+    ends at position right_index.
+
+    Thus 0 < left_index < right_index <= n-1, where n is the length of the input sequence.
+  */
+  
   std::random_device r_dev;
   std::mt19937_64 mt(r_dev());
   std::bernoulli_distribution dist(0.5);
@@ -248,6 +271,8 @@ void generate_initial_data()
 
 void assign_GF2(NTL::Mat<NTL::GF2> & M, NTL::GF2 value, int j, int i)
 {
+  //A very nice idea found by Bastien Rigault! 
+  
 	if (MULTI_THREAD_ON) {
 		determinant_mutex.lock();
 		M.put(j, i, value);
@@ -257,9 +282,10 @@ void assign_GF2(NTL::Mat<NTL::GF2> & M, NTL::GF2 value, int j, int i)
 		M.put(j, i, value);
 }
 
+/**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
+
 void init_experiment(struct experiment & experiment)
 {
-
   //Initialize trivial or fast methods. For the trivial, some data is created even though not required. Those data are marked by *fast*
 
   experiment.M.SetDims(max_dim+1, n); //number of rows = max_dim + 1 (an extra one required for initializing the top part)
@@ -302,13 +328,15 @@ void init_experiment(struct experiment & experiment)
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-/*
+
+bool chk_triangular_tables_not_the_same(NTL::Mat<NTL::GF2> M1, NTL::Mat<NTL::GF2> M2, int max_dim, int n)
+{
+  /*
   DESCRIPTION:
   Verifies that M1 and M2 (with the same size) are *not* the same.
   So it returns false is the tables are the same and true otherwise.
-*/
-bool chk_triangular_tables_not_the_same(NTL::Mat<NTL::GF2> M1, NTL::Mat<NTL::GF2> M2, int max_dim, int n)
-{
+  */
+  
   /*
     return false if tables are same
     return true if tables not the same
@@ -353,12 +381,13 @@ bool chk_triangular_tables_not_the_same(NTL::Mat<NTL::GF2> M1, NTL::Mat<NTL::GF2
 
 std::vector<std::pair<int,int>> partition_thread_load(int j)
 {
+  /*
+    Distribute the number of tasks uniformly (or almost uniformly) across processes.
+    A task is computing a determinant.
+   */
+  
   std::vector<std::pair<int, int>> result;
-
-  //Example reference: n = 5, donc positions sont 0,1,2,3,4
-  //Si j = 2, alors positions sont 1,2,3
-  //j-1 = 1, n-j+1 = 5-2+1 = 4, donc j-1 <= i < n-j+1
-    
+  
   if(n-2*j+1 > number_of_threads)//then uniformly distribute number of tasks on the maximal number of allowed threads
     {
       // Uniform share strategy
@@ -382,7 +411,7 @@ std::vector<std::pair<int,int>> partition_thread_load(int j)
     }
   
 
-  if(result.empty()){std::cerr << "List for the distribution of workloads is empty. EXIT\n";exit(-1);}//This should never happen. La seule facon que cela pourrait se produire est si n-2j+2=0 or impossible.
+  if(result.empty()){std::cerr << "List for the distribution of workloads is empty. EXIT\n";exit(-1);}//This should never happen. The only this could happen is if n-2j+2 = 0 but this impossible.
 
   return result;
  
@@ -390,17 +419,17 @@ std::vector<std::pair<int,int>> partition_thread_load(int j)
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-/*
-  DESCRIPTION:
-  Fill the triangular table with zeros when the top part of a square is detected.
-  By top part, for position indices i_0, i_1 such that j-1 < i_0<i_1 <n-j, and j>=2,
-  If a run of non-zero elements is detected from i_0-1 to to i_1+1 on level j-2,
-  and a run of zero elements is detected from i_0 to i_1 on level j-1, then fill the table
-  below accordingly.
-*/
-
 void s_f(struct experiment & experiment, int j)
 {
+  /*
+    DESCRIPTION:
+    Fill the triangular table with zeros when the top part of a square is detected.
+    By top part, for position indices i_0, i_1 such that j-1 < i_0<i_1 <n-j, and j>=2,
+    If a run of non-zero elements is detected from i_0-1 to to i_1+1 on level j-2,
+    and a run of zero elements is detected from i_0 to i_1 on level j-1, then fill the table
+    below accordingly.
+  */
+  
   /*
     Use knowledge of table with rows 0-th to (j-1)-th included to build square of zeros
     
@@ -533,6 +562,10 @@ NTL::GF2 solve_eq_for_lower_corner(struct experiment & experiment, int j, int i,
 
 bool chk_conds_for_solvability(struct experiment & experiment, int j, int i, int & effective_length)
 {
+  /*
+    Checks the hypotheses of the conjecture in technical reference given above.
+  */
+  
   if (MULTI_THREAD_ON)
 	  asptl_mutex.lock();
   bool ret=false;
@@ -565,6 +598,10 @@ bool chk_conds_for_solvability(struct experiment & experiment, int j, int i, int
 
 void d_c_s(struct experiment & experiment, int j, int start, int range)
 {
+  /*
+    This function computes determinants using results from the technical reference above.
+    This function must be called after the filling of zero-square is completed.
+   */
   
   int i = start;
   
@@ -637,8 +674,11 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
     }
 }
 
+/**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
+
 void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 {
+  //Adaptation of d_c_s for multithread thread purpose by Bastien Rigault! Absolutely wonderful!
   
   int i = start;
   std::vector<struct determinant_result> results;
@@ -719,10 +759,13 @@ void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-
 void solve_j_trivial(struct experiment & experiment, int j, int start, int range)
 {
-   
+  /*
+    Compute determinants for a given row of the triangular difference table.
+    The given row is the j-th row.
+  */
+  
   for(int i = start; i<start+range; i++)//pour single thread est equivalent a i=j-1 ... i < j-1+n-2*j+2=n-j+1
     {
       NTL::Mat<NTL::GF2> tmp;
@@ -735,24 +778,16 @@ void solve_j_trivial(struct experiment & experiment, int j, int start, int range
 	      tmp[r][c] = V0[i+1-j+r+c];
 	    }
 	}
-      
-      
-      //To make the multi thread trivial method FASTER than mono thread trivial, then find a way to remove the following lock_guard.
-      //IL FAUT regler au moins ceci si possible.
-   
       NTL::GF2 determinant = NTL::determinant(tmp);
       assign_GF2(experiment.M, determinant, j, i);
-      //experiment.flags_M[j][i] = true;
-     
     }
- 
-
 }
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
 void solve_trivial(struct experiment & experiment)
 {
+  
   if (!MULTI_THREAD_ON)
     {
       // Single thread solving
@@ -762,7 +797,7 @@ void solve_trivial(struct experiment & experiment)
   else
     {
       // Multi thread solving
-
+      
       for (int j=2; j<max_dim+1; j++)
 	{
 	  std::vector<std::pair<int, int>> thread_load = partition_thread_load(j);
@@ -795,7 +830,9 @@ void solve_fast(struct experiment & experiment)
       // Single thread solving
       for (int j=2; j<max_dim+1; j++)
 	{
+	  //Zero-square filling 
   	  s_f(experiment, j);
+	  //Use other tricks NSEW, cross shape (Bareiss) identities, conjecture, etc.
 	  d_c_s(experiment, j, j-1, n-2*j+2);
 	}
     }
@@ -809,7 +846,10 @@ void solve_fast(struct experiment & experiment)
 	  std::vector<std::pair<int, int>> thread_load = partition_thread_load(j);//We can't have optimized strategy for the workloads that uses the flags before the square filling is over. For the uniform stategy it does not matter.
       	  std::thread* thread_pool = new std::thread[thread_load.size()];
 
+	  //Zero-square filling (Note that s_f cannot be done in parallel.) 
 	  s_f(experiment, j);
+
+	  //Use other tricks NSEW, cross shape (Bareiss) identities, conjecture, etc in parallel.
    	  for (size_t k=0; k<thread_load.size(); k++)
 	    {
 	      //Make sure that inside solve_j_fast, the square filling is done mono thread only as it cannot be multi threaded.
@@ -842,9 +882,6 @@ int main(void)
     fast_experiment_mt;
 
   
- 
-  long ct_problems=0;
-  bool chk_III,chk_IV;
   double time_triv_st,time_triv_mt,time_fast_st,time_fast_mt;// for timing
   double sum_of_time_differences[4]={0.0, 0.0, 0.0, 0.0};//[0] trivial mono, [1] fast mono, [2] trivial multi, [3], fast multi 
   
@@ -856,10 +893,6 @@ int main(void)
       // Initialize data
       generate_initial_data();
       //print_initial_data();
-     
-      
-      chk_III=false;
-      chk_IV=false;
       
       init_experiment(trivial_experiment);
       init_experiment(trivial_experiment_mt);
@@ -906,7 +939,7 @@ int main(void)
 	  how_many_differences(trivial_experiment.M+fast_experiment.M,max_dim,n,nb_differences);
 	  std::cerr << "\n\n*****Mismatches between trivial single threaded and fast single threaded.*****\n";
 	  std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
-	  std::cerr << "EXIT - big problem\n";//Given the severity of a mismatch here, we exit whenever it could occur.
+	  std::cerr << "EXIT - error - mismatch between mono thread trivial and mono thread fast\n";
 	  exit(-1);
 	}
       
@@ -916,9 +949,9 @@ int main(void)
 	  
 	  std::cerr << "\n\n*****Mismatches trivial single threaded and trivial multi threaded.*****\n";
 	  std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
-	  print_ntl_gf2_mat(trivial_experiment_mt.M, max_dim, n,(int)floor(1.0+(log(max_dim)/log(10))));
+	  std::cerr << "EXIT - error - mismatch between mono thread trivial and multi thread trivial\n";
 	  exit(-1);
-	  //chk_III=true;
+	 
 	}
       
       if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment_mt.M, max_dim, n))
@@ -927,16 +960,12 @@ int main(void)
 	  
 	  std::cerr << "\n\n*****Mismatches trivial single threaded and fast multi threaded.*****\n";
 	  std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
-	  print_ntl_gf2_mat(trivial_experiment_mt.M, max_dim, n,(int)floor(1.0+(log(max_dim)/log(10))));
+	  std::cerr << "EXIT - error - mismatch between mono thread trivial and multi thread fast\n";
 	  exit(-1);
-	  //chk_IV=true;
 	}
 
-      if(chk_III || chk_IV)
-	{
-	  ct_problems++;
-	}
-      std::cout << "  ***** " << ct_problems << " | " << sum_of_time_differences[0]/(double)(ct_trial+1) << " " << sum_of_time_differences[2]/(double)(ct_trial+1) << " " << sum_of_time_differences[1]/(double)(ct_trial+1) << " " << sum_of_time_differences[3]/(double)(ct_trial+1) << "\n"; 
+    
+      std::cout << "  ***** " << sum_of_time_differences[0]/(double)(ct_trial+1) << " " << sum_of_time_differences[2]/(double)(ct_trial+1) << " " << sum_of_time_differences[1]/(double)(ct_trial+1) << " " << sum_of_time_differences[3]/(double)(ct_trial+1) << "\n"; 
     }
 
   std::cout << "\n\n***** ***** ***** ***** ***** ***** ***** ***** ***** *****\n"
@@ -944,11 +973,10 @@ int main(void)
 	    << "\nLength of sequences = " << n
 	    << "\nLength of generating vector = " <<  len_C_gen
 	    << "\nNumber of entries = " << ((n%2)==0)*((n/2)-1)*(n/2)+((n%2)==1)*(n/2)*(n-1)/2
-	    << "\nLinear subsequence starting index = " << left_index
-	    << "\nLinear subsequence ending index = " << right_index
-	    << "\n\n" << ct_problems << " mismatche(s) out of " << nb_trials << " (sample size) random test cases.\n";
+	    << "\nHidden linear subsequence starting index = " << left_index
+	    << "\nHidden linear subsequence ending index = " << right_index << "\n";
 
-  std::cout << "\nAverages of running times." << "\nThe following averages are over the sample of size " << nb_trials << ".\n"; 
+  std::cout << "\nThe following averages of running times are computed from a sample of size " << nb_trials << ".\n"; 
   std::cout << "\n   Average time trivial method single thread = " << sum_of_time_differences[0]/(double)nb_trials;
   std::cout << "\n   Average time trivial method multi thread  = " << sum_of_time_differences[2]/(double)nb_trials;
   std::cout << "\n   Average time fast method single thread    = " << sum_of_time_differences[1]/(double)nb_trials;
