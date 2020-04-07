@@ -60,12 +60,12 @@
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-const int n=256;//length data vector//7*8*9=504,131, 521, 1031, 1543, 2027 
+const int n=512;//length data vector//7*8*9=504,131, 521, 1031, 1543, 2027 
 const int nb_trials=100;//sample size for timing (and debugging)
 const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
 const double ratio_size=1.0/16.0;
 const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
-const int number_of_threads = 16; // Maximum number of thread that can be created for each j-th row
+const int number_of_threads = 10; // Maximum number of thread that can be created for each j-th row
 
 /*
   Possible locations of the hidden linear subsequence.
@@ -97,13 +97,20 @@ NTL::Vec<NTL::GF2> V0;//data vector to be filled with a linear subsequence
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-std::mutex problem_fixing_mutex;
+std::mutex determinant_mutex;
+std::mutex asptl_mutex;
 
 struct experiment {
   NTL::Mat<NTL::GF2> M;
   NTL::Mat<bool> flags_M; // Not used by trivial approach
   NTL::Mat<NTL::GF2> AspTL[max_dim+1]; // Not used by trivial approach
 };
+
+struct determinant_result {
+  int j, i;
+  NTL::GF2 determinant;
+};
+
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
@@ -242,9 +249,9 @@ void generate_initial_data()
 void assign_GF2(NTL::Mat<NTL::GF2> & M, NTL::GF2 value, int j, int i)
 {
 	if (MULTI_THREAD_ON) {
-		problem_fixing_mutex.lock();
+		determinant_mutex.lock();
 		M.put(j, i, value);
-		problem_fixing_mutex.unlock();
+		determinant_mutex.unlock();
 	}
 	else
 		M.put(j, i, value);
@@ -469,8 +476,8 @@ void s_f(struct experiment & experiment, int j)
 		  for(int x_i=x_i_l;x_i<=x_i_r;x_i++)
 		    {
 		      //std::lock_guard<std::mutex> guard(problem_fixing_mutex);
-		      experiment.M[x_j][x_i] = NTL::GF2(0);
-		      experiment.flags_M[x_j][x_i]=true;
+		      experiment.M.put(x_j, x_i, NTL::GF2(0));
+		      experiment.flags_M.put(x_j, x_i, true);
 		    }
 		}
 	      i = rp;
@@ -507,16 +514,16 @@ NTL::GF2 solve_eq_for_lower_corner(struct experiment & experiment, int j, int i,
 	  if(g<h)
 	    {
 	      for(int k=0;k<q;k++)//index colonne de la mineure
-		T[h-1][k]=experiment.M[j-2*q+h+k][i-h+k];
+		T[h-1][k]=experiment.M.get(j-2*q+h+k, i-h+k);
 	    }
 	  else if (g>h)
 	    {
 	      for(int k=0;k<q;k++)
-		T[h][k]=experiment.M[j-2*q+h+k][i-h+k];
+		T[h][k]=experiment.M.get(j-2*q+h+k, i-h+k);
 	    }
 	  //else it is not part of the expansion of the determinant
 	}
-      ret = ret+experiment.M[j-q+g][i+q-g]*NTL::determinant(T);
+      ret = ret+experiment.M.get(j-q+g, i+q-g)*NTL::determinant(T);
      
     }
   return ret;
@@ -526,7 +533,7 @@ NTL::GF2 solve_eq_for_lower_corner(struct experiment & experiment, int j, int i,
 
 bool chk_conds_for_solvability(struct experiment & experiment, int j, int i, int & effective_length)
 {
- 
+  std::lock_guard<std::mutex> lg(asptl_mutex);
   bool ret=false;
   
   for(int w1=2;w1<=max_len_side_grid;w1++)//w1 is the length of the side which is growing so that the main matrix has size (w1+1)x(w1+1)
@@ -535,17 +542,11 @@ bool chk_conds_for_solvability(struct experiment & experiment, int j, int i, int
 	{
 	  for(int cx=0;cx<w1;cx++)
 	    {
-              if (MULTI_THREAD_ON) {
-		problem_fixing_mutex.lock();
-	      	experiment.AspTL[w1][rx][cx] = experiment.M[j-2*w1+rx+cx][i-rx+cx];
-		problem_fixing_mutex.unlock();
-	      }
-	      else
-	      	experiment.AspTL[w1][rx][cx] = experiment.M[j-2*w1+rx+cx][i-rx+cx];
+	      experiment.AspTL[w1][rx][cx] = experiment.M.get(j-2*w1+rx+cx, i-rx+cx);
 	    }
 	}
       
-      if ( (NTL::determinant(experiment.AspTL[w1])!=0) && (experiment.M[j-w1][i]==0) )/******/
+      if ( (NTL::determinant(experiment.AspTL[w1])!=0) && (experiment.M.get(j-w1, i)==0) )/******/
 	{
 	  ret=true;
 	  effective_length=w1;//length of a side of the grid so the main square matrix of size (w1+1) X (w1+1)	  
@@ -572,14 +573,12 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 	  
 	  if( (j>=2) && (experiment.M[j-2][i]==NTL::GF2(1)) )//North-South-East-West
 	    {
-	      NTL::GF2 determinant = experiment.M[j-1][i-1]*experiment.M[j-1][i+1]+experiment.M[j-1][i];
-	      assign_GF2(experiment.M, determinant, j, i);
+	      experiment.M[j][i] = experiment.M[j-1][i-1]*experiment.M[j-1][i+1]+experiment.M[j-1][i];
 	      experiment.flags_M[j][i]=true;
 	    }
 	  else if ( (j>=2*max_len_side_grid) && chk_conds_for_solvability(experiment, j, i, effective_len) )
 	    {
-	      NTL::GF2 determinant = solve_eq_for_lower_corner(experiment, j, i, effective_len);
-	      assign_GF2(experiment.M, determinant, j, i);
+	      experiment.M[j][i] = solve_eq_for_lower_corner(experiment, j, i, effective_len);
 	      experiment.flags_M[j][i] = true;
 	    }
 	  else
@@ -608,8 +607,7 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 			}
 		    }
 		 
-		  NTL::GF2 determinant = NTL::determinant(tmp);
-		  assign_GF2(experiment.M, determinant, j, i);
+		  experiment.M[j][i] = NTL::determinant(tmp);
 		  experiment.flags_M[j][i]=true;
 		
 		}
@@ -624,8 +622,7 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 			tmp[r][c]=experiment.M[j-(t_x-1)][i+c-r];
 		    }
 		 
-		  NTL::GF2 determinant = NTL::determinant(tmp);
-		  assign_GF2(experiment.M, determinant, j, i);
+		  experiment.M[j][i] = NTL::determinant(tmp);
 		  experiment.flags_M[j][i]=true;
 	       
 		}
@@ -634,6 +631,86 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
       i=i+1;
     }
 }
+
+void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
+{
+  
+  int i = start;
+  std::vector<struct determinant_result> results;
+  
+  while(i < start+range)
+    {
+      int effective_len;
+      
+      if(!experiment.flags_M.get(j, i))
+	  {
+  	  /************/
+	  
+	  if( (j>=2) && (experiment.M.get(j-2, i)==NTL::GF2(1)) )//North-South-East-West
+	    {
+	      NTL::GF2 determinant = experiment.M.get(j-1, i-1)*experiment.M.get(j-1, i+1)+experiment.M.get(j-1, i);
+		  results.push_back(determinant_result{j, i, determinant});
+	    }
+	  else if ( (j>=2*max_len_side_grid) && chk_conds_for_solvability(experiment, j, i, effective_len) )
+	    {
+	      NTL::GF2 determinant = solve_eq_for_lower_corner(experiment, j, i, effective_len);
+		  results.push_back(determinant_result{j, i, determinant});
+	    }
+	  else
+	    {
+	      int t_x=1;
+	      
+	      while(t_x<=j)
+		  {
+		  if(experiment.M.get(j-t_x, i)==0)//start check from j-1 to 0 (experiment.M[0][i] == 1 by definition) ( level of sequence )
+		    t_x+=1;
+		  else
+		    break;//when here, experiment.M[j-t_x][i]!=0 AND experiment.M[j-1, j-2, ..., j-(t_x-1)][i]==0
+		  }
+	      //Note that t_x can never be 2 actually for it is handled by the North-South-East-West 
+	      if(t_x==1)//explicit computation
+		  {
+		  NTL::Mat<NTL::GF2> tmp;
+		  tmp.SetDims(j,j);
+		  
+		  for(int r = 0;r<j ; r++)
+		    {
+		      for(int c = 0; c<j ; c++)
+			  {
+			  //tmp[c][r] = experiment.M[t_x][i-r+c];//==V0[i-j+r+c+1];
+			  tmp[c][r] = V0[i-j+r+c+1];
+			  }
+		    }
+		  NTL::GF2 determinant = NTL::determinant(tmp);
+		  results.push_back(determinant_result{j, i, determinant});
+		  }
+	      else//computation by cross identities
+		  {
+		  NTL::Mat<NTL::GF2> tmp;
+		  tmp.SetDims(t_x,t_x);
+		  
+		  for(int r=0;r<t_x;r++)
+		    {
+		      for(int c=0;c<t_x;c++)
+				tmp[r][c]=experiment.M.get(j-(t_x-1), i+c-r);
+		    }
+		 
+		  NTL::GF2 determinant = NTL::determinant(tmp);
+		  results.push_back(determinant_result{j, i, determinant});
+		  }
+	    }
+	  }
+      i=i+1;
+    }
+
+  std::lock_guard<std::mutex> lg(determinant_mutex);
+  for (struct determinant_result el : results) 
+  {
+	experiment.M.put(el.j, el.i, NTL::GF2(el.determinant));
+	experiment.flags_M.put(el.j, el.i, true);
+  }
+}
+
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
@@ -706,14 +783,6 @@ void solve_trivial(struct experiment & experiment)
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-void solve_j_fast(struct experiment & exp, int j, int start, int range)
-{
-  //Do not use two different mutex for s_f and d_c_s because it may yield wrong results.
-  d_c_s(exp, j, start, range);
-}
-
-/**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
-
 void solve_fast(struct experiment & experiment)
 {
   if (!MULTI_THREAD_ON)
@@ -722,7 +791,7 @@ void solve_fast(struct experiment & experiment)
       for (int j=2; j<max_dim+1; j++)
 	{
   	  s_f(experiment, j);
-	  solve_j_fast(experiment, j, j-1, n-2*j+2);
+	  d_c_s(experiment, j, j-1, n-2*j+2);
 	}
     }
   else
@@ -740,7 +809,7 @@ void solve_fast(struct experiment & experiment)
 	    {
 	      //Make sure that inside solve_j_fast, the square filling is done mono thread only as it cannot be multi threaded.
 	      //This explains why there were lots of discrepancies for the optimized strategy which I removed here.
-	      thread_pool[k] = std::thread(&solve_j_fast, std::ref(experiment), j, thread_load[k].first, thread_load[k].second);
+	      thread_pool[k] = std::thread(&d_c_s_mt, std::ref(experiment), j, thread_load[k].first, thread_load[k].second);
 	    }
 	  
 	  for (size_t k=0; k<thread_load.size(); k++)
@@ -849,15 +918,13 @@ int main(void)
       
       if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment_mt.M, max_dim, n))
 	{
-	  /*
 	  how_many_differences(trivial_experiment.M+fast_experiment_mt.M,max_dim,n,nb_differences);
 	  
 	  std::cerr << "\n\n*****Mismatches trivial single threaded and fast multi threaded.*****\n";
 	  std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
 	  print_ntl_gf2_mat(trivial_experiment_mt.M, max_dim, n,(int)floor(1.0+(log(max_dim)/log(10))));
 	  exit(-1);
-	  */
-	  chk_IV=true;
+	  //chk_IV=true;
 	}
 
       if(chk_III || chk_IV)
