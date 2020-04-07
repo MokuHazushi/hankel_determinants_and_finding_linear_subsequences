@@ -533,7 +533,8 @@ NTL::GF2 solve_eq_for_lower_corner(struct experiment & experiment, int j, int i,
 
 bool chk_conds_for_solvability(struct experiment & experiment, int j, int i, int & effective_length)
 {
-  std::lock_guard<std::mutex> lg(asptl_mutex);
+  if (MULTI_THREAD_ON)
+	  asptl_mutex.lock();
   bool ret=false;
   
   for(int w1=2;w1<=max_len_side_grid;w1++)//w1 is the length of the side which is growing so that the main matrix has size (w1+1)x(w1+1)
@@ -553,6 +554,10 @@ bool chk_conds_for_solvability(struct experiment & experiment, int j, int i, int
 	  break;
 	}
     }
+
+  if (MULTI_THREAD_ON)
+	  asptl_mutex.unlock();
+
   return ret;
 }
 
