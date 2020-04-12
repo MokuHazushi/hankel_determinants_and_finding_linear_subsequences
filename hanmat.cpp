@@ -60,10 +60,10 @@
 
 /**** ***** ***** ***** *****/
 
-const int n=512;//length data vector
+const int n=31;//length data vector
 const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
-const double ratio_size=1.0/16.0;
-const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
+const double ratio_size=1.0/2.0;
+const int len_C_gen = (int)floor((double)n*ratio_size);//length of generating vector
 
 /*
   Possible locations of the hidden linear subsequence.
@@ -71,10 +71,10 @@ const int len_C_gen = (int)round((double)n*ratio_size);//length of generating ve
   Case [2] is representative of an easy case.
 */
 
-const int left_index = (int)(floor(7*len_C_gen));//where the linear subsequence begins, case [1]
-const int right_index = (int)(floor(9*len_C_gen));//where the linear subsequence ends, case [1]
-//const int left_index = len_C_gen;//where the linear subsequence begins, case [2]
-//const int right_index = n;//where the linear subsequence ends, case [2]
+//const int left_index = (int)(floor(7*len_C_gen));//where the linear subsequence begins, case [1]
+//const int right_index = (int)(floor(9*len_C_gen));//where the linear subsequence ends, case [1]
+const int left_index = len_C_gen;//where the linear subsequence begins, case [2]
+const int right_index = n;//where the linear subsequence ends, case [2]
 
 /**** ***** ***** ***** *****/
 
