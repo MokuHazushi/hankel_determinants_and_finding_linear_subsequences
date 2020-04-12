@@ -80,7 +80,7 @@ const int SAMPLE_SIZE_PER_THREAD = 20;
 
 const int n=4096;
 const double ratio_size=1.0/16.0;
-const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
+const int len_C_gen = (int)floor((double)n*ratio_size);//length of generating vector
 //const int left_index = len_C_gen;//where the linear subsequence begins
 //const int right_index = n;//where the linear subsequence ends
 const int left_index = (int)(floor(7*len_C_gen));//where the linear subsequence begins
