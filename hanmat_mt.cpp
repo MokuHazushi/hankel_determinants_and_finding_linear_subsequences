@@ -63,7 +63,7 @@ const int n=2048;//length data vector
 const int nb_trials=100;//sample size for timing (and debugging)
 const int max_dim=(n/2)*( n%2 == 0) + ((n+1)/2)*( n%2 == 1);
 const double ratio_size=1.0/16.0;
-const int len_C_gen = (int)round((double)n*ratio_size);//length of generating vector
+const int len_C_gen = (int)floor((double)n*ratio_size);//length of generating vector
 const int number_of_threads = 35; // Maximum number of thread that can be created for each j-th row
 
 /*
