@@ -51,16 +51,17 @@ For information about GMPL (GNU Multiple Precision Arithmetic Library) see: http
 #include <bitset>
 
 #include "detfct.h"
+#define DETFCT_MAX_SIZE 256 // Should be same as length data vector
 
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-#define N 512 //length data vector
+const int N=256; //length data vector
 const int nb_trials=100;//sample size for timing (and debugging)
 const int max_dim=(N/2)*(N%2 == 0) + ((N+1)/2)*(N%2 == 1);
 const double ratio_size=1.0/16.0;
 const int len_C_gen = (int)floor(N*ratio_size);//length of generating vector
-const int number_of_threads = 35; // Maximum number of thread that can be created for each j-th row
+const int number_of_threads = 4; // Maximum number of thread that can be created for each j-th row
 
 /*
    Possible locations of the hidden linear subsequence.
@@ -87,8 +88,8 @@ bool MULTI_THREAD_ON=false;
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-std::vector<std::bitset<N>> C_gen; //generation vector
-std::vector<std::bitset<N>> V0; //data vector to be filled with a linear subsequence
+std::bitset<len_C_gen> C_gen; //generation vector
+std::bitset<DETFCT_MAX_SIZE> V0; //data vector to be filled with a linear subsequence
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
@@ -98,7 +99,7 @@ std::mutex asptl_mutex;
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
 struct experiment {
-	std::vector<std::bitset<N>> M;
+	std::vector<std::bitset<DETFCT_MAX_SIZE>> M;
 	std::vector<std::vector<bool>> flags_M; // Not used by trivial approach
 	std::vector<std::vector<bool>> AspTL[max_dim+1]; // Not used by trivial approach
 };
@@ -145,8 +146,8 @@ void print_initial_data(void)
 	   */
 
 	//std::cout << "\n\n";
-	std::cout << "Original sequence (is identical to row 1 of triangular table), length = " << V0.length() << ", sequence:\n     ";
-	for(unsigned int l1 = 0; l1<V0.length(); l1++)
+	std::cout << "Original sequence (is identical to row 1 of triangular table), length = " << V0.size() << ", sequence:\n     ";
+	for(unsigned int l1 = 0; l1<V0.size(); l1++)
 		std::cout << V0[l1] << " ";
 
 	std::cout << "\n\n";
@@ -159,7 +160,7 @@ void print_initial_data(void)
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-void print_ntl_gf2_mat(std::vecotr<std::bitset<N> M,int max_dim,int n,int out_width1)
+void print_mat(std::vector<std::bitset<DETFCT_MAX_SIZE> M,int max_dim,int n,int out_width1)
 {
 	/*
 	   DESCRIPTION
@@ -187,42 +188,6 @@ void print_ntl_gf2_mat(std::vecotr<std::bitset<N> M,int max_dim,int n,int out_wi
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-void how_many_differences(std::vector<std::bitset<N>> M,int max_dim,int n,int & nb_differences)
-{
-
-	/*
-	   Use to validate correctness of different algorithms that compute the triangular table.
-
-	   M is the XOR (GF2 sum) of two matrices. Usually the sum of the matrix from the trivial
-	   mono thread algorithm and the matrix from another algorithm. nb_differences is the
-	   number of differences between the two matrices.
-	   */
-
-	nb_differences=0;
-	for(int c0=0;c0 < n;c0++)
-	{
-		if(M[0][c0]==NTL::GF2(1))
-		{
-			nb_differences++;
-		}
-	}
-
-	for(int r0=1;r0<max_dim+1;r0++)
-	{
-
-		for(int c0=r0-1;c0 <= n-r0;c0++)
-		{
-			if(M[r0][c0]==NTL::GF2(1))
-			{
-				std::cout << "\nMismatch " << r0 << " " << c0 ;
-				nb_differences++;
-			}
-		}
-	}
-}
-
-/**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
-
 /* UTILS FUNCTIONS */
 void generate_initial_data()
 {
@@ -238,47 +203,41 @@ void generate_initial_data()
 	std::mt19937_64 mt(r_dev());
 	std::bernoulli_distribution dist(0.5);
 
-	C_gen.SetLength(len_C_gen);
-
 	for(unsigned int i1=0;i1<C_gen.length();i1++)
 	{
-		C_gen[i1]=(NTL::GF2)(dist(mt));
+		C_gen[i1] = dist(mt);
 	}
-	C_gen[C_gen.length()-1]=(NTL::GF2)1;//make sure the generating vector is nonzero
+	C_gen[C_gen.size()-1] = true;//make sure the generating vector is nonzero
 
-	V0.SetLength(n);
-	for(int x1=0;x1<n;x1++)
+	for(int x1=0;x1<N;x1++)
 	{
-		V0[x1]=(NTL::GF2)(dist(mt));
+		V0[x1] =  dist(mt);
 	}
 
 	for(int x1=left_index ;  x1 < right_index; x1++)
 	{
-		NTL::GF2 tmpsum=(NTL::GF2)0;
+		bool tmpsum = false;
 		for(int y1 = 0; y1 < C_gen.length()-1; y1++)
 		{
-			tmpsum = tmpsum + (C_gen[ C_gen.length()-2-y1 ]*V0[ x1 -1 - y1 ]);//scalar product computation --- linear subsequence
+			tmpsum = tmpsum & (C_gen[C_gen.size-2-y1 ] | V0[x1 -1 - y1]);//scalar product computation --- linear subsequence
 		}
-		V0[x1]=(NTL::GF2)(tmpsum);//scalar product value
+		V0[x1] = tmpsum;//scalar product value
 	}
 }
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-void assign_GF2(std::vecotr<std::bitset<N>> & M, bool value, int j, int i)
+void assign_GF2(std::vector<std::bitset<DETFCT_MAX_SIZE>> & M, bool value, int j, int i)
 {
 	//A very nice idea found by Bastien Rigault! 
 
-	if (M[j][i] == value) // Not change to do
-		return;
-
 	if (MULTI_THREAD_ON) {
 		determinant_mutex.lock();
-		M[j].flip(i);
+		M[j][i] = value;
 		determinant_mutex.unlock();
 	}
 	else
-		M[j].flip(i);
+		M[j][i] = value;
 }
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
@@ -296,13 +255,13 @@ void init_experiment(struct experiment & experiment)
 	for(int r1=0;r1<max_dim+1;r1++)
 	{
 		experiment.M[r1].reset();
-		for(int c1=0;c1<n;c1++)
+		for(int c1=0;c1<N;c1++)
 			experiment.flags_M[r1][c1]=false; //*fast*
 	}
 
 	experiment.M[0].set();
-	experiment.M[0] |= V0[c1];
-	for(int c1=0;c1<n;c1++)
+	experiment.M[0] |= V0;
+	for(int c1=0;c1<N;c1++)
 	{
 		experiment.flags_M[0][c1]=true; //*fast*
 		experiment.flags_M[1][c1]=true; //*fast*
@@ -338,11 +297,11 @@ std::vector<std::pair<int,int>> partition_thread_load(int j)
 
 	std::vector<std::pair<int, int>> result;
 
-	if(n-2*j+1 > number_of_threads)//then uniformly distribute number of tasks on the maximal number of allowed threads
+	if(N-2*j+1 > number_of_threads)//then uniformly distribute number of tasks on the maximal number of allowed threads
 	{
 		// Uniform share strategy
-		int quo = (n-2*j+1) / number_of_threads;
-		int rem = (n-2*j+1) % number_of_threads;
+		int quo = (N-2*j+1) / number_of_threads;
+		int rem = (N-2*j+1) % number_of_threads;
 
 		for(long a = 0 ; a < number_of_threads; a++)
 		{
@@ -354,7 +313,7 @@ std::vector<std::pair<int,int>> partition_thread_load(int j)
 	}
 	else//then distribute one task per thread on n-2*j+2 threads < number_of_threads
 	{
-		for(long a = (j-1) ; a <= n-j ; a++)//safe no out of bound since n-2*j+2 <= number_of_threads
+		for(long a = (j-1) ; a <= N-j ; a++)//safe no out of bound since n-2*j+2 <= number_of_threads
 		{
 			result.push_back(std::pair<int,int>(a,1));
 		}
@@ -403,7 +362,7 @@ below accordingly.
 	int i = j-1;
 	//struct experiment & experiment = const_cast<struct experiment &>(exp);
 
-	while(i<n-j+1)//using knowledge of (j-2)th, (j-1)th rows, stop when right position = n-j+1 excluded
+	while(i<N-j+1)//using knowledge of (j-2)th, (j-1)th rows, stop when right position = n-j+1 excluded
 	{
 		int lp = 0;//index of the left non-zero element
 		int rp = 0;//index of the right non-zero element
@@ -417,10 +376,10 @@ below accordingly.
 			lp = i;
 			int t1 = lp+1;
 
-			while(t1 < n-j+1)
+			while(t1 < N-j+1)
 			{
 				bool chkR1 = (experiment.M[j-2][t1-1]) && (experiment.M[j-2][t1]) && (!experiment.M[j-1][t1-1]) && (experiment.M[j-1][t1]);
-				bool chkR2 = (t1==n-j) && (experiment.M[j-2][t1]) && (!experiment.M[j-1][t1]) && (experiment.M[j-2][t1+1]) && (!experiment.M[j-1][t1+1]);
+				bool chkR2 = (t1==N-j) && (experiment.M[j-2][t1]) && (!experiment.M[j-1][t1]) && (experiment.M[j-2][t1+1]) && (!experiment.M[j-1][t1+1]);
 
 				if(chkR1||chkR2)
 				{
@@ -447,15 +406,15 @@ below accordingly.
 					else
 						x_i_l = x_j-1;
 
-					if(rp<=n-x_j)
+					if(rp<=N-x_j)
 						x_i_r = rp;
 					else
-						x_i_r = n-x_j;
+						x_i_r = N-x_j;
 
 					for(int x_i=x_i_l;x_i<=x_i_r;x_i++)
 					{
 						experiment.M[x_j].reset(x_i);
-						experiment.flags_M.put(x_j, x_i, true);
+						experiment.flags_M[x_j][x_i] = true;
 					}
 				}
 				i = rp;
@@ -482,10 +441,7 @@ bool solve_eq_for_lower_corner(struct experiment & experiment, int j, int i, int
 
 	bool ret;
 
-	std::vector<std::vector<bool>> T;
-	T.reserve(q);//temporary matrix of size q X q for a minor obtained from the (q+1) X (q+1) Main matrix
-	for (int i=0; i<q; i++)
-		T[i].reserve(q);
+	std::vector<std::bitset<DETFCT_MAX_SIZE>> T(q); //temporary matrix of size q X q for a minor obtained from the (q+1) X (q+1) Main matrix
 
 	for(int g=0;g<q;g++)//index mineure
 	{
@@ -503,7 +459,7 @@ bool solve_eq_for_lower_corner(struct experiment & experiment, int j, int i, int
 			}
 			//else it is not part of the expansion of the determinant
 		}
-		ret = ret | (experiment.M[j-q+g][i+q-g] & GF2Utils::det_b(T);
+		ret = ret | (experiment.M[j-q+g][i+q-g] & GF2_Utils::det_b(T, q);
 
 	}
 	return ret;
@@ -527,11 +483,11 @@ bool chk_conds_for_solvability(struct experiment & experiment, int j, int i, int
 		{
 			for(int cx=0;cx<w1;cx++)
 			{
-				experiment.AspTL[w1][rx][cx] = experiment.M.get(j-2*w1+rx+cx, i-rx+cx);
+				experiment.AspTL[w1][rx][cx] = experiment.M[j-2*w1+rx+cx][i-rx+cx];
 			}
 		}
 
-		if ( (NTL::determinant(experiment.AspTL[w1])!=0) && (experiment.M.get(j-w1, i)==0) )/******/
+		if ( (GF2_Utils::det_b(experiment.AspTL[w1], w1)) && (!experiment.M[j-w1][i]) )/******/
 		{
 			ret=true;
 			effective_length=w1;//length of a side of the grid so the main square matrix of size (w1+1) X (w1+1)	  
@@ -564,7 +520,7 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 		{
 			/************/
 
-			if( (j>=2) && (experiment.M[j-2][i]==NTL::GF2(1)) )//North-South-East-West
+			if( (j>=2) && (experiment.M[j-2][i]) )//North-South-East-West
 			{
 				experiment.M[j][i] = experiment.M[j-1][i-1]*experiment.M[j-1][i+1]+experiment.M[j-1][i];
 				experiment.flags_M[j][i]=true;
@@ -580,7 +536,7 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 
 				while(t_x<=j)
 				{
-					if(experiment.M[j-t_x][i]==0)//start check from j-1 to 0 (experiment.M[0][i] == 1 by definition) ( level of sequence )
+					if(!experiment.M[j-t_x][i])//start check from j-1 to 0 (experiment.M[0][i] == 1 by definition) ( level of sequence )
 						t_x+=1;
 					else
 						break;//when here, experiment.M[j-t_x][i]!=0 AND experiment.M[j-1, j-2, ..., j-(t_x-1)][i]==0
@@ -588,8 +544,7 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 				//Note that t_x can never be 2 actually for it is handled by the North-South-East-West 
 				if(t_x==1)//explicit computation
 				{
-					NTL::Mat<NTL::GF2> tmp;
-					tmp.SetDims(j,j);
+					std::vector<std::bitset<DETFCT_MAX_SIZE>> tmp(j);
 
 					for(int r = 0;r<j ; r++)
 					{
@@ -600,14 +555,13 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 						}
 					}
 
-					experiment.M[j][i] = NTL::determinant(tmp);
+					experiment.M[j][i] = GF2_Utils::det_b(tmp, j);
 					experiment.flags_M[j][i]=true;
 
 				}
 				else//computation by cross identities
 				{
-					NTL::Mat<NTL::GF2> tmp;
-					tmp.SetDims(t_x,t_x);
+					std::vector<std::bitset<DETFCT_MAX_SIZE>> tmp(t_x);
 
 					for(int r=0;r<t_x;r++)
 					{
@@ -615,7 +569,7 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 							tmp[r][c]=experiment.M[j-(t_x-1)][i+c-r];
 					}
 
-					experiment.M[j][i] = NTL::determinant(tmp);
+					experiment.M[j][i] = GF2_Utils::det_b(tmp, t_x);
 					experiment.flags_M[j][i]=true;
 
 				}
