@@ -50,13 +50,12 @@ For information about GMPL (GNU Multiple Precision Arithmetic Library) see: http
 #include <vector>
 #include <bitset>
 
-#define DETFCT_MAX_SIZE 256 // Should be same as length data vector
 #include "detfct.h"
 
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-const int N=256; //length data vector
+const int N=MAT_MAX_SIZE; //length data vector
 const int nb_trials=100;//sample size for timing (and debugging)
 const int max_dim=(N/2)*(N%2 == 0) + ((N+1)/2)*(N%2 == 1);
 const double ratio_size=1.0/16.0;
@@ -89,7 +88,7 @@ bool MULTI_THREAD_ON=false;
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
 std::bitset<len_C_gen> C_gen; //generation vector
-std::bitset<DETFCT_MAX_SIZE> V0; //data vector to be filled with a linear subsequence
+std::bitset<MAT_MAX_SIZE> V0; //data vector to be filled with a linear subsequence
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
@@ -99,9 +98,9 @@ std::mutex asptl_mutex;
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
 struct experiment {
-	std::vector<std::bitset<DETFCT_MAX_SIZE>> M;
+	std::vector<std::bitset<MAT_MAX_SIZE>> M;
 	std::vector<std::vector<bool>> flags_M; // Not used by trivial approach
-	std::vector<std::bitset<DETFCT_MAX_SIZE>> AspTL[max_dim+1]; // Not used by trivial approach
+	std::vector<std::bitset<MAT_MAX_SIZE>> AspTL[max_dim+1]; // Not used by trivial approach
 };
 
 struct determinant_result {
@@ -160,7 +159,7 @@ void print_initial_data(void)
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-void print_mat(std::vector<std::bitset<DETFCT_MAX_SIZE>> M,int max_dim,int n,int out_width1)
+void print_mat(std::vector<std::bitset<MAT_MAX_SIZE>> M,int max_dim,int n,int out_width1)
 {
 	/*
 	   DESCRIPTION
@@ -227,7 +226,7 @@ void generate_initial_data()
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-void assign_GF2(std::vector<std::bitset<DETFCT_MAX_SIZE>> & M, bool value, int j, int i)
+void assign_GF2(std::vector<std::bitset<MAT_MAX_SIZE>> & M, bool value, int j, int i)
 {
 	//A very nice idea found by Bastien Rigault! 
 
@@ -439,7 +438,7 @@ bool solve_eq_for_lower_corner(struct experiment & experiment, int j, int i, int
 
 	bool ret;
 
-	std::vector<std::bitset<DETFCT_MAX_SIZE>> T(q); //temporary matrix of size q X q for a minor obtained from the (q+1) X (q+1) Main matrix
+	std::vector<std::bitset<MAT_MAX_SIZE>> T(q); //temporary matrix of size q X q for a minor obtained from the (q+1) X (q+1) Main matrix
 
 	for(int g=0;g<q;g++)//index mineure
 	{
@@ -542,7 +541,7 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 				//Note that t_x can never be 2 actually for it is handled by the North-South-East-West 
 				if(t_x==1)//explicit computation
 				{
-					std::vector<std::bitset<DETFCT_MAX_SIZE>> tmp(j);
+					std::vector<std::bitset<MAT_MAX_SIZE>> tmp(j);
 
 					for(int r = 0;r<j ; r++)
 					{
@@ -559,7 +558,7 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 				}
 				else//computation by cross identities
 				{
-					std::vector<std::bitset<DETFCT_MAX_SIZE>> tmp(t_x);
+					std::vector<std::bitset<MAT_MAX_SIZE>> tmp(t_x);
 
 					for(int r=0;r<t_x;r++)
 					{
@@ -618,7 +617,7 @@ void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 				//Note that t_x can never be 2 actually for it is handled by the North-South-East-West 
 				if(t_x==1)//explicit computation
 				{
-					std::vector<std::bitset<DETFCT_MAX_SIZE>> tmp(j);
+					std::vector<std::bitset<MAT_MAX_SIZE>> tmp(j);
 
 					for(int r = 0;r<j ; r++)
 					{
@@ -633,7 +632,7 @@ void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 				}
 				else//computation by cross identities
 				{
-					std::vector<std::bitset<DETFCT_MAX_SIZE>> tmp(t_x);
+					std::vector<std::bitset<MAT_MAX_SIZE>> tmp(t_x);
 
 					for(int r=0;r<t_x;r++)
 					{
@@ -669,7 +668,7 @@ void solve_j_trivial(struct experiment & experiment, int j, int start, int range
 
 	for(int i = start; i<start+range; i++)//pour single thread est equivalent a i=j-1 ... i < j-1+n-2*j+2=n-j+1
 	{
-		std::vector<std::bitset<DETFCT_MAX_SIZE>> tmp(j);
+		std::vector<std::bitset<MAT_MAX_SIZE>> tmp(j);
 
 		for( int r = 0; r<j ; r++)
 		{
@@ -834,7 +833,7 @@ int main(void)
 
 		int nb_differences;
 		// Check results against trivial mono thread
-		if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment.M, max_dim, N))
+		if (GF2_Utils::chk_triangular_tables_not_equal(trivial_experiment.M, fast_experiment.M, max_dim, N))
 		{
 			//how_many_differences(trivial_experiment.M+fast_experiment.M,max_dim,n,nb_differences);
 			std::cerr << "\n\n*****Mismatches between trivial single threaded and fast single threaded.*****\n";
@@ -843,7 +842,7 @@ int main(void)
 			exit(-1);
 		}
 
-		if (chk_triangular_tables_not_the_same(trivial_experiment.M, trivial_experiment_mt.M, max_dim, N))
+		if (GF2_Utils::chk_triangular_tables_not_equal(trivial_experiment.M, trivial_experiment_mt.M, max_dim, N))
 		{
 			//how_many_differences(trivial_experiment.M+trivial_experiment_mt.M,max_dim,n,nb_differences);
 
@@ -854,7 +853,7 @@ int main(void)
 
 		}
 
-		if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment_mt.M, max_dim, N))
+		if (GF2_Utils::chk_triangular_tables_not_equal(trivial_experiment.M, fast_experiment_mt.M, max_dim, N))
 		{
 			//how_many_differences(trivial_experiment.M+fast_experiment_mt.M,max_dim,n,nb_differences);
 

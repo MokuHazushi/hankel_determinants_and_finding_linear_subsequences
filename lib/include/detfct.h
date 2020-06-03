@@ -13,8 +13,8 @@
 #include <vector>
 #include <bitset>
 
-#ifndef DETFCT_MAX_SIZE
-#define DETFCT_MAX_SIZE 512
+#ifndef MAT_MAX_SIZE
+#define MAT_MAX_SIZE 512
 #endif
 
 namespace GF2_Utils {
@@ -23,7 +23,9 @@ namespace GF2_Utils {
 	   Determinant est egale aux produits des elements de la diagonale de la triangularisation.
 	   Des qu'un element nul est rencontre sur la diagonale alors retourne zero.
 	   */
-	bool det_b(std::vector<std::bitset<DETFCT_MAX_SIZE>> M, long msize);
+	bool det_b(std::vector<std::bitset<MAT_MAX_SIZE>> M, long msize);
+
+	bool chk_triangular_tables_not_equal(std::vector<std::bitset<MAT_MAX_SIZE>> & M1, std::vector<std::bitset<MAT_MAX_SIZE>> & M2, long maxdim, long msize);
 }
 
 #endif

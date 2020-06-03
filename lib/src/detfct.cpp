@@ -9,11 +9,12 @@
 #include <chrono>
 #include <vector>
 #include <bitset>
+#include <cassert>
 
 #include "detfct.h"
 
 namespace GF2_Utils {
-	long posit_table[DETFCT_MAX_SIZE];//On conserve les position des indexes de rangee sur lesquelles operees.
+	long posit_table[MAT_MAX_SIZE];//On conserve les position des indexes de rangee sur lesquelles operees.
 
 	long count_effective_length_posit_table;//Pour calculer le nombre d'entrees non nulles pour une colonne.
 
@@ -23,10 +24,9 @@ namespace GF2_Utils {
 	   Des qu'un element nul est rencontre sur la diagonale alors retourne zero.
 	   */
 
-	bool det_b(std::vector<std::bitset<DETFCT_MAX_SIZE>> M, long msize)
+	bool det_b(std::vector<std::bitset<MAT_MAX_SIZE>> M, long msize)
 	{
-		if (msize > DETFCT_MAX_SIZE) 
-			throw std::runtime_error("Matrix is too big to compute determinant");
+		assert(msize <= MAT_MAX_SIZE);
 
 		for(long c = 0; c < msize; c++)
 		{
@@ -57,5 +57,28 @@ namespace GF2_Utils {
 		//Jusqu'a ici, tous les elements de la diagonale de la matrice triangularisee sont non nuls. Il ne reste qu'a verifier l'entree dans le coin inferieur droit c'est-a-dire simplement retourne sa valeur.
 		return M[msize-1][msize-1];
 
+	}
+
+	bool chk_triangular_tables_not_equal(std::vector<std::bitset<MAT_MAX_SIZE>> & M1, std::vector<std::bitset<MAT_MAX_SIZE>> & M2, long maxdim, long msize)
+	{
+		assert(msize < MAT_MAX_SIZE);
+		assert((M1.size() <= msize) && (M2.size() <= msize) && (M1.size() == M2.size()));
+
+		if (M1.size() == 0)
+			return false;
+
+		if (M1[0] != M2[0])
+			return true;
+
+		for (long j=1; j<maxdim+1; j++)
+		{
+			for (long i=j-1; i <= msize-j; i++)
+			{
+				if (M1[j][i] != M2[j][i])
+					return true;
+			}
+		}
+
+		return false;
 	}
 }

@@ -9,7 +9,6 @@
 #include <NTL/mat_GF2.h>
 
 #include "detfct.h"
-#define DETFCT_MAX_SIZE 512
 
 void test(long N)
 {
@@ -20,10 +19,10 @@ void test(long N)
 	double time_ntl=0.0;
 	double time_artisanal=0.0;
 
-	std::vector<std::bitset<DETFCT_MAX_SIZE>> A;
+	std::vector<std::bitset<MAT_MAX_SIZE>> A;
 	for(long r = 0 ; r < N; r++)
 	{
-		std::bitset<DETFCT_MAX_SIZE> tmp;
+		std::bitset<MAT_MAX_SIZE> tmp;
 		A.push_back(tmp);
 	}
 
@@ -69,10 +68,10 @@ void test(long N)
 
 int main(void)
 {
-	std::cout << "TEST FOR N=512, DETFCT_MAX_SIZE=" << DETFCT_MAX_SIZE << "\n";
+	std::cout << "TEST FOR N=512, MAT_MAX_SIZE=" << MAT_MAX_SIZE << "\n";
 	test(512);
 
-	std::cout << "TEST FOR N=256, DETFCT_MAX_SIZE=" << DETFCT_MAX_SIZE << "\n";
+	std::cout << "TEST FOR N=256, MAT_MAX_SIZE=" << MAT_MAX_SIZE << "\n";
 	test(256);
 
 	return 0;

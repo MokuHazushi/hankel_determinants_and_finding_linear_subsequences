@@ -4,9 +4,12 @@ GMPL_INC=/usr/local/include
 
 LOCAL_LIB_DIR=lib
 
+MAT_MAX_SIZE_OPTION=MAT_MAX_SIZE
+MAT_MAX_SIZE=512
+
 GF2: clean clean_lib
-	cd lib && ${MAKE} lib
-	g++ -Wall -Wpedantic -g -O5 -I${LOCAL_LIB_DIR}/include hanmat_GF2.cpp -o hanmat_GF2 -std=c++11 -L${LOCAL_LIB_DIR} -ldetfct
+	cd lib && ${MAKE} lib ${MAT_MAX_SIZE_OPTION}=${MAT_MAX_SIZE}
+	g++ -Wall -Wpedantic -g -O5 -I${LOCAL_LIB_DIR}/include hanmat_GF2.cpp -o hanmat_GF2 -std=c++11 -L${LOCAL_LIB_DIR} -ldetfct -lpthread -D${MAT_MAX_SIZE_OPTION}=${MAT_MAX_SIZE}
 
 multithread: clean
 	g++ -Wall -Wpedantic -g -O5 -I${NTL_INC} -I${GMPL_INC} hanmat_mt.cpp -o hanmat_mt -std=c++11 -L${LIB_DIR} -lntl -lgmp -lm -lpthread
