@@ -592,18 +592,18 @@ void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 	{
 		int effective_len;
 
-		if(!experiment.flags_M.get(j, i))
+		if(!experiment.flags_M[j][i])
 		{
 			/************/
 
-			if( (j>=2) && (experiment.M.get(j-2, i)==NTL::GF2(1)) )//North-South-East-West
+			if( (j>=2) && (experiment.M[j-2][i]) )//North-South-East-West
 			{
-				NTL::GF2 determinant = experiment.M.get(j-1, i-1)*experiment.M.get(j-1, i+1)+experiment.M.get(j-1, i);
+				bool determinant = experiment.M[j-1][i-1]*experiment.M[j-1][i+1]+experiment.M[j-1][i];
 				results.push_back(determinant_result{j, i, determinant});
 			}
 			else if ( (j>=2*max_len_side_grid) && chk_conds_for_solvability(experiment, j, i, effective_len) )
 			{
-				NTL::GF2 determinant = solve_eq_for_lower_corner(experiment, j, i, effective_len);
+				bool determinant = solve_eq_for_lower_corner(experiment, j, i, effective_len);
 				results.push_back(determinant_result{j, i, determinant});
 			}
 			else
@@ -612,7 +612,7 @@ void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 
 				while(t_x<=j)
 				{
-					if(experiment.M.get(j-t_x, i)==0)//start check from j-1 to 0 (experiment.M[0][i] == 1 by definition) ( level of sequence )
+					if(!experiment.M[j-t_x][i])//start check from j-1 to 0 (experiment.M[0][i] == 1 by definition) ( level of sequence )
 						t_x+=1;
 					else
 						break;//when here, experiment.M[j-t_x][i]!=0 AND experiment.M[j-1, j-2, ..., j-(t_x-1)][i]==0
@@ -620,8 +620,7 @@ void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 				//Note that t_x can never be 2 actually for it is handled by the North-South-East-West 
 				if(t_x==1)//explicit computation
 				{
-					NTL::Mat<NTL::GF2> tmp;
-					tmp.SetDims(j,j);
+					std::vector<std::bitset<DETFCT_MAX_SIZE>> tmp(j);
 
 					for(int r = 0;r<j ; r++)
 					{
@@ -631,21 +630,20 @@ void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 							tmp[c][r] = V0[i-j+r+c+1];
 						}
 					}
-					NTL::GF2 determinant = NTL::determinant(tmp);
+					bool determinant = GF2_Utils::det_b(tmp, j);
 					results.push_back(determinant_result{j, i, determinant});
 				}
 				else//computation by cross identities
 				{
-					NTL::Mat<NTL::GF2> tmp;
-					tmp.SetDims(t_x,t_x);
+					std::vector<std::bitset<DETFCT_MAX_SIZE>> tmp(t_x);
 
 					for(int r=0;r<t_x;r++)
 					{
 						for(int c=0;c<t_x;c++)
-							tmp[r][c]=experiment.M.get(j-(t_x-1), i+c-r);
+							tmp[r][c]=experiment.M[j-(t_x-1)][i+c-r];
 					}
 
-					NTL::GF2 determinant = NTL::determinant(tmp);
+					bool determinant = GF2_Utils::det_b(tmp, j);
 					results.push_back(determinant_result{j, i, determinant});
 				}
 			}
@@ -656,8 +654,8 @@ void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 	std::lock_guard<std::mutex> lg(determinant_mutex);
 	for (struct determinant_result el : results) 
 	{
-		experiment.M.put(el.j, el.i, NTL::GF2(el.determinant));
-		experiment.flags_M.put(el.j, el.i, true);
+		experiment.M[el.j][el.i] = el.determinant;
+		experiment.flags_M[el.j][el.i] = true;
 	}
 }
 
@@ -673,8 +671,7 @@ void solve_j_trivial(struct experiment & experiment, int j, int start, int range
 
 	for(int i = start; i<start+range; i++)//pour single thread est equivalent a i=j-1 ... i < j-1+n-2*j+2=n-j+1
 	{
-		NTL::Mat<NTL::GF2> tmp;
-		tmp.SetDims(j,j);
+		std::vector<std::bitset<DETFCT_MAX_SIZE>> tmp(j);
 
 		for( int r = 0; r<j ; r++)
 		{
@@ -683,7 +680,7 @@ void solve_j_trivial(struct experiment & experiment, int j, int start, int range
 				tmp[r][c] = V0[i+1-j+r+c];
 			}
 		}
-		NTL::GF2 determinant = NTL::determinant(tmp);
+		bool determinant = GF2_Utils::det_b(tmp, j);
 		assign_GF2(experiment.M, determinant, j, i);
 	}
 }
