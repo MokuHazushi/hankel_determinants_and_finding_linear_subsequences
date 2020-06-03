@@ -50,8 +50,8 @@ For information about GMPL (GNU Multiple Precision Arithmetic Library) see: http
 #include <vector>
 #include <bitset>
 
-#include "detfct.h"
 #define DETFCT_MAX_SIZE 256 // Should be same as length data vector
+#include "detfct.h"
 
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
@@ -101,7 +101,7 @@ std::mutex asptl_mutex;
 struct experiment {
 	std::vector<std::bitset<DETFCT_MAX_SIZE>> M;
 	std::vector<std::vector<bool>> flags_M; // Not used by trivial approach
-	std::vector<std::vector<bool>> AspTL[max_dim+1]; // Not used by trivial approach
+	std::vector<std::bitset<DETFCT_MAX_SIZE>> AspTL[max_dim+1]; // Not used by trivial approach
 };
 
 struct determinant_result {
@@ -151,8 +151,8 @@ void print_initial_data(void)
 		std::cout << V0[l1] << " ";
 
 	std::cout << "\n\n";
-	std::cout << "Generating vector, length = " << C_gen.length() << ", vector:\n     ";
-	for(unsigned int l1 = 0; l1<C_gen.length(); l1++)
+	std::cout << "Generating vector, length = " << C_gen.size() << ", vector:\n     ";
+	for(unsigned int l1 = 0; l1<C_gen.size(); l1++)
 		std::cout << C_gen[l1] << " ";
 
 	std::cout << "\n\n";
@@ -160,7 +160,7 @@ void print_initial_data(void)
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
-void print_mat(std::vector<std::bitset<DETFCT_MAX_SIZE> M,int max_dim,int n,int out_width1)
+void print_mat(std::vector<std::bitset<DETFCT_MAX_SIZE>> M,int max_dim,int n,int out_width1)
 {
 	/*
 	   DESCRIPTION
@@ -203,7 +203,7 @@ void generate_initial_data()
 	std::mt19937_64 mt(r_dev());
 	std::bernoulli_distribution dist(0.5);
 
-	for(unsigned int i1=0;i1<C_gen.length();i1++)
+	for(unsigned int i1=0;i1<C_gen.size();i1++)
 	{
 		C_gen[i1] = dist(mt);
 	}
@@ -217,9 +217,9 @@ void generate_initial_data()
 	for(int x1=left_index ;  x1 < right_index; x1++)
 	{
 		bool tmpsum = false;
-		for(int y1 = 0; y1 < C_gen.length()-1; y1++)
+		for(size_t y1 = 0; y1 < C_gen.size()-1; y1++)
 		{
-			tmpsum = tmpsum & (C_gen[C_gen.size-2-y1 ] | V0[x1 -1 - y1]);//scalar product computation --- linear subsequence
+			tmpsum = tmpsum && (C_gen[C_gen.size()-2-y1 ] || V0[x1 -1 - y1]);//scalar product computation --- linear subsequence
 		}
 		V0[x1] = tmpsum;//scalar product value
 	}
@@ -270,8 +270,6 @@ void init_experiment(struct experiment & experiment)
 	for(int t=1;t<max_dim+1;t++)
 	{
 		experiment.AspTL[t].reserve(t); //*fast*
-		for (int t2=0; t2<t; t2++)
-			experiment.AspTL[t][t2].reserve(t);
 	}
 }
 
@@ -459,7 +457,7 @@ bool solve_eq_for_lower_corner(struct experiment & experiment, int j, int i, int
 			}
 			//else it is not part of the expansion of the determinant
 		}
-		ret = ret | (experiment.M[j-q+g][i+q-g] & GF2_Utils::det_b(T, q);
+		ret = ret + experiment.M[j-q+g][i+q-g] * GF2_Utils::det_b(T, q);
 
 	}
 	return ret;
@@ -694,7 +692,7 @@ void solve_trivial(struct experiment & experiment)
 	{
 		// Single thread solving
 		for (int j=2; j<max_dim+1; j++)
-			solve_j_trivial(experiment, j, j-1, n-2*j+2);
+			solve_j_trivial(experiment, j, j-1, N-2*j+2);
 	}
 	else
 	{
@@ -735,7 +733,7 @@ void solve_fast(struct experiment & experiment)
 			//Zero-square filling 
 			s_f(experiment, j);
 			//Use other tricks NSEW, cross shape (Bareiss) identities, conjecture, etc.
-			d_c_s(experiment, j, j-1, n-2*j+2);
+			d_c_s(experiment, j, j-1, N-2*j+2);
 		}
 	}
 	else
@@ -774,7 +772,7 @@ int main(void)
 	std::cout.precision(6);
 	std::cout.setf( std::ios::fixed, std::ios::floatfield );
 
-	if(right_index>n){std::cerr << "\n\nOut of bound\n\n"; exit(-1);}
+	if(right_index>N){std::cerr << "\n\nOut of bound\n\n"; exit(-1);}
 
 	// Experiments declarations
 	struct experiment 
@@ -836,18 +834,18 @@ int main(void)
 
 		int nb_differences;
 		// Check results against trivial mono thread
-		if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment.M, max_dim, n))
+		if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment.M, max_dim, N))
 		{
-			how_many_differences(trivial_experiment.M+fast_experiment.M,max_dim,n,nb_differences);
+			//how_many_differences(trivial_experiment.M+fast_experiment.M,max_dim,n,nb_differences);
 			std::cerr << "\n\n*****Mismatches between trivial single threaded and fast single threaded.*****\n";
 			std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
 			std::cerr << "EXIT - error - mismatch between mono thread trivial and mono thread fast\n";
 			exit(-1);
 		}
 
-		if (chk_triangular_tables_not_the_same(trivial_experiment.M, trivial_experiment_mt.M, max_dim, n))
+		if (chk_triangular_tables_not_the_same(trivial_experiment.M, trivial_experiment_mt.M, max_dim, N))
 		{
-			how_many_differences(trivial_experiment.M+trivial_experiment_mt.M,max_dim,n,nb_differences);
+			//how_many_differences(trivial_experiment.M+trivial_experiment_mt.M,max_dim,n,nb_differences);
 
 			std::cerr << "\n\n*****Mismatches trivial single threaded and trivial multi threaded.*****\n";
 			std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
@@ -856,9 +854,9 @@ int main(void)
 
 		}
 
-		if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment_mt.M, max_dim, n))
+		if (chk_triangular_tables_not_the_same(trivial_experiment.M, fast_experiment_mt.M, max_dim, N))
 		{
-			how_many_differences(trivial_experiment.M+fast_experiment_mt.M,max_dim,n,nb_differences);
+			//how_many_differences(trivial_experiment.M+fast_experiment_mt.M,max_dim,n,nb_differences);
 
 			std::cerr << "\n\n*****Mismatches trivial single threaded and fast multi threaded.*****\n";
 			std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
@@ -872,9 +870,9 @@ int main(void)
 
 	std::cout << "\n\n***** ***** ***** ***** ***** ***** ***** ***** ***** *****\n"
 		<< "\nNumber of threads = " << number_of_threads
-		<< "\nLength of sequences = " << n
+		<< "\nLength of sequences = " << N
 		<< "\nLength of generating vector = " <<  len_C_gen
-		<< "\nNumber of entries = " << ((n%2)==0)*((n/2)-1)*(n/2)+((n%2)==1)*(n/2)*(n-1)/2
+		<< "\nNumber of entries = " << ((N%2)==0)*((N/2)-1)*(N/2)+((N%2)==1)*(N/2)*(N-1)/2
 		<< "\nHidden linear subsequence starting index = " << left_index
 		<< "\nHidden linear subsequence ending index = " << right_index << "\n";
 

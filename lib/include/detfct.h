@@ -13,7 +13,9 @@
 #include <vector>
 #include <bitset>
 
+#ifndef DETFCT_MAX_SIZE
 #define DETFCT_MAX_SIZE 512
+#endif
 
 namespace GF2_Utils {
 	/*
