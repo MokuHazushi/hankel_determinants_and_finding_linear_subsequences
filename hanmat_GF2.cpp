@@ -99,7 +99,7 @@ std::mutex asptl_mutex;
 
 struct experiment {
 	std::vector<std::bitset<MAT_MAX_SIZE>> M;
-	std::vector<std::vector<bool>> flags_M; // Not used by trivial approach
+	std::vector<std::bitset<MAT_MAX_SIZE>> flags_M; // Not used by trivial approach
 	std::vector<std::bitset<MAT_MAX_SIZE>> AspTL[max_dim+1]; // Not used by trivial approach
 };
 
@@ -121,8 +121,7 @@ void print_stats(double time_triv_st, double time_triv_mt, double time_fast_st, 
 	int number_of_entries = ((N%2)==0)*((N/2)-1)*(N/2)+((N%2)==1)*(N/2)*(N-1)/2;
 	int out_width0 = (int)floor(1.0+(log(N)/log(10)));
 
-	std::cout << "\n[A." << std::setw(out_width0) <<0<< "]  length of a sequence                  = " << N;
-	std::cout << "\n[A." << std::setw(out_width0) <<1<< "]  length of generating vector           = " << len_C_gen;
+	std::cout << "\n[A." << std::setw(out_width0) <<0<< "]  length of a sequence                  = " << N; std::cout << "\n[A." << std::setw(out_width0) <<1<< "]  length of generating vector           = " << len_C_gen;
 	std::cout << "\n[A." << std::setw(out_width0) <<2<< "]  left index linear subsequence         = " << left_index;
 	std::cout << "\n[A." << std::setw(out_width0) <<3<< "]  right index linear subsequene         = " << right_index;
 	std::cout << "\n[A." << std::setw(out_width0) <<4<< "]  number of entries of a table          = " << number_of_entries << " (analytic count)\n";
@@ -245,9 +244,9 @@ void init_experiment(struct experiment & experiment)
 {
 	//Initialize trivial or fast methods. For the trivial, some data is created even though not required. Those data are marked by *fast*
 
-	experiment.M.reserve(max_dim+1); //number of rows = max_dim + 1 (an extra one required for initializing the top part)
-	experiment.flags_M.reserve(max_dim+1); //*fast*
-	experiment.AspTL[0].reserve(1); //*fast*
+	experiment.M = std::vector<std::bitset<MAT_MAX_SIZE>>(max_dim+1); //number of rows = max_dim + 1 (an extra one required for initializing the top part)
+	experiment.flags_M = std::vector<std::bitset<MAT_MAX_SIZE>>(max_dim+1); //*fast*
+	experiment.AspTL[0] = std::vector<std::bitset<MAT_MAX_SIZE>>(1); //*fast*
 
 	experiment.AspTL[0][0][0]=false;//*fast*, initialized however never needed
 
@@ -268,7 +267,7 @@ void init_experiment(struct experiment & experiment)
 
 	for(int t=1;t<max_dim+1;t++)
 	{
-		experiment.AspTL[t].reserve(t); //*fast*
+		experiment.AspTL[t] = std::vector<std::bitset<MAT_MAX_SIZE>>(t); //*fast*
 	}
 }
 

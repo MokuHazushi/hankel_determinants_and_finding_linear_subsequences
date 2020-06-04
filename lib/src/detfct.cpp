@@ -61,7 +61,7 @@ namespace GF2_Utils {
 
 	bool chk_triangular_tables_not_equal(std::vector<std::bitset<MAT_MAX_SIZE>> & M1, std::vector<std::bitset<MAT_MAX_SIZE>> & M2, long maxdim, long msize)
 	{
-		assert(msize < MAT_MAX_SIZE);
+		assert(msize <= MAT_MAX_SIZE);
 		assert((M1.size() <= msize) && (M2.size() <= msize) && (M1.size() == M2.size()));
 
 		if (M1.size() == 0)
