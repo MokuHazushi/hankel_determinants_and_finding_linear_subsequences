@@ -217,7 +217,7 @@ void generate_initial_data()
 		bool tmpsum = false;
 		for(size_t y1 = 0; y1 < C_gen.size()-1; y1++)
 		{
-			tmpsum = tmpsum && (C_gen[C_gen.size()-2-y1 ] || V0[x1 -1 - y1]);//scalar product computation --- linear subsequence
+			tmpsum = tmpsum || (C_gen[C_gen.size()-2-y1 ] && V0[x1 -1 - y1]);//scalar product computation --- linear subsequence
 		}
 		V0[x1] = tmpsum;//scalar product value
 	}
@@ -244,21 +244,14 @@ void init_experiment(struct experiment & experiment)
 {
 	//Initialize trivial or fast methods. For the trivial, some data is created even though not required. Those data are marked by *fast*
 
-	experiment.M = std::vector<std::bitset<MAT_MAX_SIZE>>(max_dim+1); //number of rows = max_dim + 1 (an extra one required for initializing the top part)
-	experiment.flags_M = std::vector<std::bitset<MAT_MAX_SIZE>>(max_dim+1); //*fast*
-	experiment.AspTL[0] = std::vector<std::bitset<MAT_MAX_SIZE>>(1); //*fast*
+	experiment.M = std::vector<std::bitset<MAT_MAX_SIZE>>(max_dim+1, 0); //number of rows = max_dim + 1 (an extra one required for initializing the top part)
+	experiment.flags_M = std::vector<std::bitset<MAT_MAX_SIZE>>(max_dim+1, 0); //*fast*
+	experiment.AspTL[0] = std::vector<std::bitset<MAT_MAX_SIZE>>(1, 0); //*fast*
 
 	experiment.AspTL[0][0][0]=false;//*fast*, initialized however never needed
 
-	for(int r1=0;r1<max_dim+1;r1++)
-	{
-		experiment.M[r1].reset();
-		for(int c1=0;c1<N;c1++)
-			experiment.flags_M[r1][c1]=false; //*fast*
-	}
-
 	experiment.M[0].set();
-	experiment.M[0] |= V0;
+	experiment.M[1] |= V0;
 	for(int c1=0;c1<N;c1++)
 	{
 		experiment.flags_M[0][c1]=true; //*fast*
@@ -435,11 +428,11 @@ bool solve_eq_for_lower_corner(struct experiment & experiment, int j, int i, int
 	   */
 
 
-	bool ret;
+	bool ret = false;
 
+	std::vector<std::bitset<MAT_MAX_SIZE>> T(q, 0); //temporary matrix of size q X q for a minor obtained from the (q+1) X (q+1) Main matrix
 	for(int g=0;g<q;g++)//index mineure
 	{
-		std::vector<std::bitset<MAT_MAX_SIZE>> T(q); //temporary matrix of size q X q for a minor obtained from the (q+1) X (q+1) Main matrix
 		for(int h=0;h<q+1;h++)//index rangee de la mineure
 		{
 			if(g<h)
@@ -454,7 +447,7 @@ bool solve_eq_for_lower_corner(struct experiment & experiment, int j, int i, int
 			}
 			//else it is not part of the expansion of the determinant
 		}
-		ret = ret + experiment.M[j-q+g][i+q-g] * GF2_Utils::det_b(T, q);
+		ret = ret || (experiment.M[j-q+g][i+q-g] && GF2_Utils::det_b(std::vector<std::bitset<MAT_MAX_SIZE>>(T), q));
 	}
 	return ret;
 }
@@ -516,7 +509,7 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 
 			if( (j>=2) && (experiment.M[j-2][i]) )//North-South-East-West
 			{
-				experiment.M[j][i] = experiment.M[j-1][i-1]*experiment.M[j-1][i+1]+experiment.M[j-1][i];
+				experiment.M[j][i] = (experiment.M[j-1][i-1] && experiment.M[j-1][i+1]) || experiment.M[j-1][i];
 				experiment.flags_M[j][i]=true;
 			}
 			else if ( (j>=2*max_len_side_grid) && chk_conds_for_solvability(experiment, j, i, effective_len) )
@@ -538,7 +531,7 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 				//Note that t_x can never be 2 actually for it is handled by the North-South-East-West 
 				if(t_x==1)//explicit computation
 				{
-					std::vector<std::bitset<MAT_MAX_SIZE>> tmp(j);
+					std::vector<std::bitset<MAT_MAX_SIZE>> tmp(j, 0);
 
 					for(int r = 0;r<j ; r++)
 					{
@@ -555,7 +548,7 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 				}
 				else//computation by cross identities
 				{
-					std::vector<std::bitset<MAT_MAX_SIZE>> tmp(t_x);
+					std::vector<std::bitset<MAT_MAX_SIZE>> tmp(t_x, 0);
 
 					for(int r=0;r<t_x;r++)
 					{
@@ -614,7 +607,7 @@ void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 				//Note that t_x can never be 2 actually for it is handled by the North-South-East-West 
 				if(t_x==1)//explicit computation
 				{
-					std::vector<std::bitset<MAT_MAX_SIZE>> tmp(j);
+					std::vector<std::bitset<MAT_MAX_SIZE>> tmp(j, 0);
 
 					for(int r = 0;r<j ; r++)
 					{
@@ -629,7 +622,7 @@ void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 				}
 				else//computation by cross identities
 				{
-					std::vector<std::bitset<MAT_MAX_SIZE>> tmp(t_x);
+					std::vector<std::bitset<MAT_MAX_SIZE>> tmp(t_x, 0);
 
 					for(int r=0;r<t_x;r++)
 					{
@@ -665,7 +658,7 @@ void solve_j_trivial(struct experiment & experiment, int j, int start, int range
 
 	for(int i = start; i<start+range; i++)//pour single thread est equivalent a i=j-1 ... i < j-1+n-2*j+2=n-j+1
 	{
-		std::vector<std::bitset<MAT_MAX_SIZE>> tmp(j);
+		std::vector<std::bitset<MAT_MAX_SIZE>> tmp(j, 0);
 
 		for( int r = 0; r<j ; r++)
 		{
