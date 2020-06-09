@@ -106,7 +106,7 @@ struct experiment {
 struct determinant_result {
 	int j, i;
 	bool determinant;
-}; //Data structure used to make the multithread version of our fast algorithm outputs correct result when use with NTL. TODO
+}; //Data structure used to make the multithread version of our fast algorithm outputs correct result
 
 /**** ***** ***** ***** ***** ***** ***** ***** ***** *****/
 
@@ -447,7 +447,7 @@ bool solve_eq_for_lower_corner(struct experiment & experiment, int j, int i, int
 			}
 			//else it is not part of the expansion of the determinant
 		}
-		ret = ret || (experiment.M[j-q+g][i+q-g] && GF2_Utils::det_b(std::vector<std::bitset<MAT_MAX_SIZE>>(T), q));
+		ret = ret ^ (experiment.M[j-q+g][i+q-g] & GF2_Utils::det_b(std::vector<std::bitset<MAT_MAX_SIZE>>(T), q));
 	}
 	return ret;
 }
@@ -586,12 +586,15 @@ void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 			if( (j>=2) && (experiment.M[j-2][i]) )//North-South-East-West
 			{
 				bool determinant = (experiment.M[j-1][i-1] & experiment.M[j-1][i+1]) ^ experiment.M[j-1][i];
-				results.push_back(determinant_result{j, i, determinant});
+				assign_GF2(experiment.M, determinant, j, i);
+				experiment.flags_M[j][i] = true;
 			}
 			else if ( (j>=2*max_len_side_grid) && chk_conds_for_solvability(experiment, j, i, effective_len) )
 			{
 				bool determinant = solve_eq_for_lower_corner(experiment, j, i, effective_len);
-				results.push_back(determinant_result{j, i, determinant});
+				assign_GF2(experiment.M, determinant, j, i);
+				experiment.flags_M[j][i] = true;
+
 			}
 			else
 			{
@@ -618,7 +621,9 @@ void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 						}
 					}
 					bool determinant = GF2_Utils::det_b(tmp, j);
-					results.push_back(determinant_result{j, i, determinant});
+					assign_GF2(experiment.M, determinant, j, i);
+					experiment.flags_M[j][i] = true;
+
 				}
 				else//computation by cross identities
 				{
@@ -630,19 +635,13 @@ void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 							tmp[r][c]=experiment.M[j-(t_x-1)][i+c-r];
 					}
 
-					bool determinant = GF2_Utils::det_b(tmp, j);
-					results.push_back(determinant_result{j, i, determinant});
+					bool determinant = GF2_Utils::det_b(tmp, t_x);
+					assign_GF2(experiment.M, determinant, j, i);
+					experiment.flags_M[j][i] = true;
 				}
 			}
 		}
 		i=i+1;
-	}
-
-	std::lock_guard<std::mutex> lg(determinant_mutex);
-	for (struct determinant_result el : results) 
-	{
-		experiment.M[el.j][el.i] = el.determinant;
-		experiment.flags_M[el.j][el.i] = true;
 	}
 }
 

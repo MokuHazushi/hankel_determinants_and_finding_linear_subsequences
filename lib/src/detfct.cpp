@@ -56,7 +56,7 @@ namespace GF2_Utils {
 		}
 
 		//Jusqu'a ici, tous les elements de la diagonale de la matrice triangularisee sont non nuls. Il ne reste qu'a verifier l'entree dans le coin inferieur droit c'est-a-dire simplement retourne sa valeur.
-		return M[msize-1][msize-1];
+		return M[msize-1].test(msize-1);
 
 	}
 
