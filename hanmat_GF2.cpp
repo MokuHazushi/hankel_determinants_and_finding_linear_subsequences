@@ -437,10 +437,9 @@ bool solve_eq_for_lower_corner(struct experiment & experiment, int j, int i, int
 
 	bool ret;
 
-	std::vector<std::bitset<MAT_MAX_SIZE>> T(q); //temporary matrix of size q X q for a minor obtained from the (q+1) X (q+1) Main matrix
-
 	for(int g=0;g<q;g++)//index mineure
 	{
+		std::vector<std::bitset<MAT_MAX_SIZE>> T(q); //temporary matrix of size q X q for a minor obtained from the (q+1) X (q+1) Main matrix
 		for(int h=0;h<q+1;h++)//index rangee de la mineure
 		{
 			if(g<h)
@@ -456,7 +455,6 @@ bool solve_eq_for_lower_corner(struct experiment & experiment, int j, int i, int
 			//else it is not part of the expansion of the determinant
 		}
 		ret = ret + experiment.M[j-q+g][i+q-g] * GF2_Utils::det_b(T, q);
-
 	}
 	return ret;
 }
@@ -834,31 +832,43 @@ int main(void)
 		// Check results against trivial mono thread
 		if (GF2_Utils::chk_triangular_tables_not_equal(trivial_experiment.M, fast_experiment.M, max_dim, N))
 		{
-			//how_many_differences(trivial_experiment.M+fast_experiment.M,max_dim,n,nb_differences);
+			nb_differences = GF2_Utils::how_many_differences(trivial_experiment.M, fast_experiment.M, max_dim, N);
 			std::cerr << "\n\n*****Mismatches between trivial single threaded and fast single threaded.*****\n";
 			std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
 			std::cerr << "EXIT - error - mismatch between mono thread trivial and mono thread fast\n";
+
+			std::cerr << "\n";
+			print_mat(trivial_experiment.M, max_dim, N, 1);
+			std::cerr << "\n";
+			print_mat(fast_experiment.M, max_dim, N, 1);
 			exit(-1);
 		}
 
 		if (GF2_Utils::chk_triangular_tables_not_equal(trivial_experiment.M, trivial_experiment_mt.M, max_dim, N))
 		{
-			//how_many_differences(trivial_experiment.M+trivial_experiment_mt.M,max_dim,n,nb_differences);
-
+			nb_differences = GF2_Utils::how_many_differences(trivial_experiment.M, trivial_experiment_mt.M, max_dim, N);
 			std::cerr << "\n\n*****Mismatches trivial single threaded and trivial multi threaded.*****\n";
 			std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
 			std::cerr << "EXIT - error - mismatch between mono thread trivial and multi thread trivial\n";
-			exit(-1);
 
+			std::cerr << "\n";
+			print_mat(trivial_experiment.M, max_dim, N, 1);
+			std::cerr << "\n";
+			print_mat(trivial_experiment_mt.M, max_dim, N, 1);
+			exit(-1);
 		}
 
 		if (GF2_Utils::chk_triangular_tables_not_equal(trivial_experiment.M, fast_experiment_mt.M, max_dim, N))
 		{
-			//how_many_differences(trivial_experiment.M+fast_experiment_mt.M,max_dim,n,nb_differences);
-
+			nb_differences = GF2_Utils::how_many_differences(trivial_experiment.M, fast_experiment_mt.M, max_dim, N);
 			std::cerr << "\n\n*****Mismatches trivial single threaded and fast multi threaded.*****\n";
 			std::cerr << "#####Number of mismatches = " << nb_differences << "\n";
 			std::cerr << "EXIT - error - mismatch between mono thread trivial and multi thread fast\n";
+
+			std::cerr << "\n";
+			print_mat(trivial_experiment.M, max_dim, N, 1);
+			std::cerr << "\n";
+			print_mat(fast_experiment_mt.M, max_dim, N, 1);
 			exit(-1);
 		}
 
