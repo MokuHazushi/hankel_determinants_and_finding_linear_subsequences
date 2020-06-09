@@ -402,7 +402,7 @@ below accordingly.
 
 					for(int x_i=x_i_l;x_i<=x_i_r;x_i++)
 					{
-						experiment.M[x_j].reset(x_i);
+						experiment.M[x_j][x_i] = false;
 						experiment.flags_M[x_j][x_i] = true;
 					}
 				}
@@ -474,7 +474,7 @@ bool chk_conds_for_solvability(struct experiment & experiment, int j, int i, int
 			}
 		}
 
-		if ( (GF2_Utils::det_b(experiment.AspTL[w1], w1)) && (!experiment.M[j-w1][i]) )/******/
+		if ( (GF2_Utils::det_b(std::vector<std::bitset<MAT_MAX_SIZE>>(experiment.AspTL[w1]), w1)) && (!experiment.M[j-w1][i]) )/******/
 		{
 			ret=true;
 			effective_length=w1;//length of a side of the grid so the main square matrix of size (w1+1) X (w1+1)	  
@@ -509,7 +509,7 @@ void d_c_s(struct experiment & experiment, int j, int start, int range)
 
 			if( (j>=2) && (experiment.M[j-2][i]) )//North-South-East-West
 			{
-				experiment.M[j][i] = (experiment.M[j-1][i-1] && experiment.M[j-1][i+1]) || experiment.M[j-1][i];
+				experiment.M[j][i] = (experiment.M[j-1][i-1] & experiment.M[j-1][i+1]) ^ experiment.M[j-1][i];
 				experiment.flags_M[j][i]=true;
 			}
 			else if ( (j>=2*max_len_side_grid) && chk_conds_for_solvability(experiment, j, i, effective_len) )
@@ -585,7 +585,7 @@ void d_c_s_mt(struct experiment & experiment, int j, int start, int range)
 
 			if( (j>=2) && (experiment.M[j-2][i]) )//North-South-East-West
 			{
-				bool determinant = experiment.M[j-1][i-1]*experiment.M[j-1][i+1]+experiment.M[j-1][i];
+				bool determinant = (experiment.M[j-1][i-1] & experiment.M[j-1][i+1]) ^ experiment.M[j-1][i];
 				results.push_back(determinant_result{j, i, determinant});
 			}
 			else if ( (j>=2*max_len_side_grid) && chk_conds_for_solvability(experiment, j, i, effective_len) )
