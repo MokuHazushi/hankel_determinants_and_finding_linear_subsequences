@@ -31,7 +31,7 @@ make check
 sudo make install
 ```
 
-# USAGE
+# Usage
 The application can be built using the provided makefile:
 
 ## Build with NTL library
@@ -50,7 +50,7 @@ make GF2 MAT_MAX_SIZE=1024
 
 Build with vector of bitset for matrice representation and custom optimized determinant computation in GF2. Due to the static size allocation of `std::bitset` the data vector length has to be defined at compilation time using the compilation variable `MAT_MAX_SIZE`. The number of thread can be adjusted by directly modyfing the `hanmat_GF2.cpp` file.
 
-# FILE OF INTEREST
+# File of interest
 - `hanmat_mt.cpp` - Features the NTL library based approach, single and multithreaded.
 - `hanmat_GF2.cpp` - Features the custom GF2 library based approach, single and multithread.
 - `lib/src/detfct.cpp` - Features the custom GF2 library, contains the optimized determinant function.
