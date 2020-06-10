@@ -21,7 +21,7 @@ namespace GF2_Utils {
 	   Des qu'un element nul est rencontre sur la diagonale alors retourne zero.
 	   */
 
-	bool det_b(std::vector<std::bitset<MAT_MAX_SIZE>> M, long msize)
+	bool det_b(std::vector<std::bitset<MAT_MAX_SIZE>> M, size_t msize)
 	{
 		long posit_table[MAT_MAX_SIZE];//On conserve les position des indexes de rangee sur lesquelles operees.
 
@@ -29,10 +29,10 @@ namespace GF2_Utils {
 
 		assert(msize <= MAT_MAX_SIZE);
 
-		for(long c = 0; c < msize; c++)
+		for(size_t c = 0; c < msize; c++)
 		{
 			count_effective_length_posit_table=0;
-			for(long r = c; r < msize; r++)
+			for(size_t r = c; r < msize; r++)
 			{
 				if(M[r].test(c))//fouille les elements non nuls en-dessous de M[c][c]
 				{
@@ -60,7 +60,7 @@ namespace GF2_Utils {
 
 	}
 
-	bool chk_triangular_tables_not_equal(std::vector<std::bitset<MAT_MAX_SIZE>> & M1, std::vector<std::bitset<MAT_MAX_SIZE>> & M2, long maxdim, long msize)
+	bool chk_triangular_tables_not_equal(std::vector<std::bitset<MAT_MAX_SIZE>> & M1, std::vector<std::bitset<MAT_MAX_SIZE>> & M2, long maxdim, size_t msize)
 	{
 		assert(msize <= MAT_MAX_SIZE);
 		assert((M1.size() <= msize) && (M2.size() <= msize) && (M1.size() == M2.size()));
@@ -73,7 +73,7 @@ namespace GF2_Utils {
 
 		for (long j=1; j<maxdim+1; j++)
 		{
-			for (long i=j-1; i <= msize-j; i++)
+			for (size_t i=j-1; i <= msize-j; i++)
 			{
 				if (M1[j][i] != M2[j][i])
 					return true;
@@ -83,7 +83,7 @@ namespace GF2_Utils {
 		return false;
 	}
 
-	int how_many_differences(std::vector<std::bitset<MAT_MAX_SIZE>> & M1, std::vector<std::bitset<MAT_MAX_SIZE>> & M2, long maxdim, long msize)
+	int how_many_differences(std::vector<std::bitset<MAT_MAX_SIZE>> & M1, std::vector<std::bitset<MAT_MAX_SIZE>> & M2, long maxdim, size_t msize)
 	{
 
 		/*
@@ -98,16 +98,16 @@ namespace GF2_Utils {
 		assert((M1.size() <= msize) && (M2.size() <= msize) && (M1.size() == M2.size()));
 
 		int nb_differences=0;
-		for(int c0=0;c0 < msize;c0++)
+		for(size_t c0=0;c0 < msize;c0++)
 		{
 			if(M1[0][c0]^M2[0][c0])
 				nb_differences++;
 		}
 
-		for(int r0=1;r0<maxdim+1;r0++)
+		for(long r0=1;r0<maxdim+1;r0++)
 		{
 
-			for(int c0=r0-1;c0 <= msize-r0;c0++)
+			for(size_t c0=r0-1;c0 <= msize-r0;c0++)
 			{
 				if(M1[r0][c0]^M2[r0][c0])
 				{
